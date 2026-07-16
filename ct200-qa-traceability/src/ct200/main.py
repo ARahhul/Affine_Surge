@@ -46,11 +46,15 @@ def create_app() -> FastAPI:
     app.add_middleware(CorrelationMiddleware)
 
     # Register routers
+    from ct200.transport.routers.browse import router as browse_router
     from ct200.transport.routers.health import router as health_router
     from ct200.transport.routers.ingestion import router as ingestion_router
+    from ct200.transport.routers.search import router as search_router
 
     app.include_router(health_router)
     app.include_router(ingestion_router)
+    app.include_router(browse_router)
+    app.include_router(search_router)
 
     return app
 

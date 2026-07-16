@@ -271,9 +271,9 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
 - [x] 10. Checkpoint — Versioning validation
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. Phase 6 — Browse and Search
+- [x] 11. Phase 6 — Browse and Search
 
-  - [~] 11.1 Implement browse API endpoints
+  - [x] 11.1 Implement browse API endpoints
     - Create `src/ct200/transport/routers/browse.py` with GET /api/v1/documents/{id}/versions/{vid}/tree (browse hierarchy)
     - Create `src/ct200/application/browse.py` with BrowseTreeUseCase
     - Return nodes with heading, depth, order_index, content_hash, child_count, scoped to specified version
@@ -281,7 +281,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Return 404 for non-existent node IDs
     - _Requirements: 6.1, 6.2, 6.3_
 
-  - [~] 11.2 Implement FTS5 full-text search
+  - [x] 11.2 Implement FTS5 full-text search
     - Create `src/ct200/infrastructure/search/fts5_search.py` implementing search across heading and body
     - Create `src/ct200/transport/routers/search.py` with GET /api/v1/search
     - Create `src/ct200/application/search.py` with SearchNodesUseCase
@@ -289,12 +289,12 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Reject queries shorter than 2 characters with error response
     - _Requirements: 6.4, 6.5, CP-6.2, CP-6.3_
 
-  - [~] 11.3 Implement pagination for browse and search
+  - [x] 11.3 Implement pagination for browse and search
     - Add pagination support with default page_size=20, max page_size=100
     - Include total count, page metadata, version ID, node count, content_hash, and per-request latency in responses
     - _Requirements: 6.6, 6.7, CP-6.1_
 
-  - [~] 11.4 Implement change detection in browse/search responses
+  - [x] 11.4 Implement change detection in browse/search responses
     - Expose change detection info for nodes whose content_hash differs between versions
     - Include previous_hash, current_hash, and change_type (added, modified, removed)
     - _Requirements: 6.8, CP-6.3_
@@ -314,7 +314,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Test nodes with differing content_hash between versions expose change info
     - **Validates: Requirements 6.8**
 
-- [~] 12. Checkpoint — Browse & Search validation
+- [x] 12. Checkpoint — Browse & Search validation
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 13. Phase 7 — Selection and Generation
