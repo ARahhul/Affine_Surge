@@ -178,39 +178,39 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
 - [x] 6. Checkpoint — Tree Engine validation
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Phase 4 — Persistence
+- [x] 7. Phase 4 — Persistence
 
-  - [~] 7.1 Implement SQLAlchemy ORM models and database engine
+  - [x] 7.1 Implement SQLAlchemy ORM models and database engine
     - Create `src/ct200/infrastructure/database/engine.py` with async engine, session factory, WAL mode, FK enforcement
     - Create `src/ct200/infrastructure/database/models.py` with DocumentModel, VersionModel, NodeModel, SelectionModel, GenerationModel
     - Add all indexes (ix_versions_doc_hash, ix_nodes_version, ix_nodes_lineage, ix_nodes_parent_order)
     - _Requirements: 4.1, 4.2_
 
-  - [~] 7.2 Set up Alembic migrations
+  - [x] 7.2 Set up Alembic migrations
     - Configure `alembic/env.py` for async SQLAlchemy
     - Create initial migration creating all tables with FTS5 virtual table for nodes_fts
     - _Requirements: 4.1, 4.2_
 
-  - [~] 7.3 Implement repository layer
+  - [x] 7.3 Implement repository layer
     - Create `src/ct200/infrastructure/database/repositories/` with DocumentRepository, VersionRepository, NodeRepository, SelectionRepository, GenerationRepository
     - Implement all IRepository protocol methods
     - Implement content-hash based idempotent version check
     - Implement single-transaction node bulk creation
     - _Requirements: 4.3, 4.4, 4.5, 4.6, CP-4.1, CP-4.2, CP-4.3_
 
-  - [~] 7.4 Implement ingestion API endpoint
+  - [x] 7.4 Implement ingestion API endpoint
     - Create `src/ct200/transport/routers/ingestion.py` with POST /api/v1/documents (multipart PDF upload)
     - Create `src/ct200/application/ingestion.py` with IngestDocumentUseCase orchestrating parse → tree → version → persist
     - Wire DI for parser, tree engine, repositories
     - _Requirements: 2.1, 4.3, 4.6_
 
-  - [~] 7.5 Implement authentication middleware
+  - [x] 7.5 Implement authentication middleware
     - Create `src/ct200/transport/middleware/auth.py` validating bearer tokens against AUTH_SECRET_KEY
     - Skip auth for /health, /ready, /metrics, /docs endpoints
     - Return HTTP 401 with structured error on invalid/missing credentials
     - _Requirements: 12.1, CP-12.1_
 
-  - [~] 7.6 Implement rate limiting middleware
+  - [x] 7.6 Implement rate limiting middleware
     - Create `src/ct200/transport/middleware/rate_limit.py` using slowapi
     - Configure per-client limits on ingestion (default 10/min) and generation (default 40/min) endpoints
     - Return HTTP 429 with Retry-After header on limit exceeded
@@ -227,7 +227,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Test ingesting same content twice results in exactly one version record
     - **Validates: Requirements 4.3**
 
-- [~] 8. Checkpoint — Persistence validation
+- [x] 8. Checkpoint — Persistence validation
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Phase 5 — Versioning
