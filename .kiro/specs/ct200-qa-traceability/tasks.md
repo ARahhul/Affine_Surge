@@ -118,15 +118,15 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
 - [x] 4. Checkpoint — PDF Parser validation
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Phase 3 — Tree Engine
+- [x] 5. Phase 3 — Tree Engine
 
-  - [~] 5.1 Implement domain entities and value objects
+  - [x] 5.1 Implement domain entities and value objects
     - Create `src/ct200/domain/entities.py` with DocumentNode, DocumentTree, LineageMatch, ParsedContent, etc.
     - Create `src/ct200/domain/value_objects.py` with ContentHash, LineageID, ConfidenceScore
     - Implement Pydantic v2 validation for all entities
     - _Requirements: 3.1_
 
-  - [~] 5.2 Implement tree construction engine
+  - [x] 5.2 Implement tree construction engine
     - Create `src/ct200/infrastructure/tree/tree_engine.py` implementing ITreeEngine protocol
     - Build hierarchical tree from parsed content assigning heading, body, depth (0-10), parent, children, parsed_number, order_index, lineage_id placeholder, content_hash
     - Implement duplicate heading disambiguation via unique (parent, heading, order_index) tuple
@@ -136,7 +136,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Reconstruct multi-page tables as single coherent nodes
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
-  - [~] 5.3 Implement tree validation
+  - [x] 5.3 Implement tree validation
     - Validate single-parent rule for every non-root node
     - Validate no cycles (parent pointer traversal terminates at root)
     - Validate depth consistency (node.depth == parent.depth + 1)
@@ -144,7 +144,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Reject invalid trees with error indicating which rule failed and offending node
     - _Requirements: 3.7, 3.8, 3.9, 3.10, 3.11_
 
-  - [~] 5.4 Implement content hash computation
+  - [x] 5.4 Implement content hash computation
     - Compute SHA-256 hash of heading+body concatenation for each node
     - Ensure deterministic: identical content always produces same hash
     - _Requirements: 3.12, CP-3.2_
@@ -175,7 +175,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Test numbered-list items resembling headings are classified as body content
     - **Validates: Requirements 3.5**
 
-- [~] 6. Checkpoint — Tree Engine validation
+- [x] 6. Checkpoint — Tree Engine validation
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 7. Phase 4 — Persistence
