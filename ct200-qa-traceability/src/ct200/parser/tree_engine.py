@@ -1,12 +1,15 @@
 """Tree construction engine — converts ParsedContent into a validated DocumentTree.
 
 Implements the ITreeEngine protocol. Handles:
-- Heading hierarchy construction based on heading levels
+- Section-number-based hierarchy (1 → depth 1, 1.1 → depth 2, 1.1.1 → depth 3)
+- Cover page detection and skipping (content before first numbered section)
+- Heading hierarchy construction for unnumbered heading blocks (fallback)
 - Duplicate heading disambiguation by (parent, heading, order_index)
 - Skipped heading levels (assigns to nearest valid ancestor)
 - Document order preservation (order_index from source sequence)
 - List item classification (body content, not separate nodes)
 - Multi-page table reconstruction (single node per table)
+- Body text normalization (collapse PDF line wrapping)
 - Content hash computation per node (SHA-256 of heading+body)
 - Full tree validation (single parent, no cycles, depth consistency, sibling indices)
 """
@@ -28,8 +31,20 @@ from ct200.models import (
 
 logger = structlog.get_logger()
 
-# Pattern to extract section numbers like "1.2.3" from heading text
+# Pattern to detect section numbers at start of text: "1.", "1.1", "2.3.1 ..."
+_SECTION_RE = re.compile(r"^(\d+(?:\.\d+)*)\s+(.*)")
+
+# Pattern to extract section numbers like "1.2.3" from heading text (legacy compat)
 _SECTION_NUMBER_RE = re.compile(r"^(\d+(?:\.\d+)*)\s")
+
+
+def _has_numbered_sections(blocks: list[ContentBlock]) -> bool:
+    """Check if ANY block in the document contains a numbered section heading."""
+    for block in blocks:
+        text = block.content.strip()
+        if _SECTION_RE.match(text):
+            return True
+    return False
 
 
 class TreeEngine:
@@ -68,7 +83,11 @@ class TreeEngine:
         )
 
         # Build tree structure from content blocks
-        self._populate_tree(root, content.blocks, version_id)
+        # Choose strategy based on whether the document has numbered sections
+        if _has_numbered_sections(content.blocks):
+            self._populate_tree_numbered(root, content.blocks, version_id)
+        else:
+            self._populate_tree_headings(root, content.blocks, version_id)
 
         # Compute tree metadata
         node_count = self._count_nodes(root)
@@ -93,10 +112,113 @@ class TreeEngine:
         )
         return tree
 
-    def _populate_tree(
+    def _populate_tree_numbered(
         self, root: DocumentNode, blocks: list[ContentBlock], version_id: str
     ) -> None:
-        """Build tree structure from ordered content blocks.
+        """Build tree using section numbers for hierarchy.
+
+        Algorithm:
+        1. Scan blocks for numbered sections (e.g., "1.", "1.1", "2.3.1")
+        2. Everything before the first numbered section is ignored (cover page)
+        3. Section number depth determines node depth (1→1, 1.1→2, 1.1.1→3)
+        4. Non-numbered content between sections becomes body of current section
+        5. Body text is normalized: single newlines collapsed, double preserved
+        """
+        stack: list[DocumentNode] = [root]
+        child_counters: dict[str, int] = {root.id: 0}
+        current_body_parts: list[str] = []
+        found_first_section = False
+
+        for block in blocks:
+            text = block.content.strip()
+            if not text:
+                continue
+
+            # Check if this block starts with a section number
+            match = _SECTION_RE.match(text)
+
+            if match:
+                found_first_section = True
+                section_num = match.group(1)  # e.g., "1.2.3"
+                heading_text = text  # Keep full text including number
+                target_depth = section_num.count(".") + 1  # "1"→1, "1.1"→2
+
+                # Flush body to current node
+                self._flush_body_normalized(stack, current_body_parts)
+                current_body_parts = []
+
+                # Pop stack to find correct parent
+                while len(stack) > 1 and stack[-1].depth >= target_depth:
+                    stack.pop()
+                parent = stack[-1]
+
+                # Create node
+                if parent.id not in child_counters:
+                    child_counters[parent.id] = 0
+                order_idx = child_counters[parent.id]
+                child_counters[parent.id] += 1
+
+                node = DocumentNode(
+                    id=str(uuid.uuid4()),
+                    version_id=version_id,
+                    parent_id=parent.id,
+                    heading=heading_text,
+                    body="",
+                    depth=parent.depth + 1,
+                    parsed_number=section_num,
+                    order_index=order_idx,
+                    lineage_id=str(uuid.uuid4()),
+                    content_hash=compute_content_hash(heading_text, ""),
+                )
+                parent.children.append(node)
+                stack.append(node)
+                child_counters[node.id] = 0
+
+            elif found_first_section:
+                # Check if a HEADING-type block without number should create a sub-node
+                if (
+                    block.block_type == BlockType.HEADING
+                    and block.level > 0
+                    and len(text) < 80
+                ):
+                    self._flush_body_normalized(stack, current_body_parts)
+                    current_body_parts = []
+
+                    # Use current depth + 1 for unnumbered sub-headings
+                    parent = stack[-1]
+                    if parent.id not in child_counters:
+                        child_counters[parent.id] = 0
+                    order_idx = child_counters[parent.id]
+                    child_counters[parent.id] += 1
+
+                    node = DocumentNode(
+                        id=str(uuid.uuid4()),
+                        version_id=version_id,
+                        parent_id=parent.id,
+                        heading=text,
+                        body="",
+                        depth=parent.depth + 1,
+                        parsed_number="",
+                        order_index=order_idx,
+                        lineage_id=str(uuid.uuid4()),
+                        content_hash=compute_content_hash(text, ""),
+                    )
+                    parent.children.append(node)
+                    stack.append(node)
+                    child_counters[node.id] = 0
+                else:
+                    # Body/table/list content for current section
+                    current_body_parts.append(text)
+            # else: before first section = cover page, skip
+
+        self._flush_body_normalized(stack, current_body_parts)
+
+    def _populate_tree_headings(
+        self, root: DocumentNode, blocks: list[ContentBlock], version_id: str
+    ) -> None:
+        """Build tree structure from ordered content blocks using heading levels.
+
+        Fallback path for documents without numbered sections.
 
         Algorithm:
         - Maintain a stack representing the path from root to the current
@@ -166,6 +288,33 @@ class TreeEngine:
 
         # Flush any remaining body content to the last heading node
         self._flush_body(stack, current_body_parts)
+
+    def _flush_body_normalized(
+        self, stack: list[DocumentNode], body_parts: list[str]
+    ) -> None:
+        """Flush accumulated body parts with text normalization (for numbered-section docs).
+
+        Normalizes PDF line wrapping: collapses single newlines into spaces,
+        preserves double newlines as paragraph breaks.
+        """
+        if not body_parts or len(stack) <= 1:
+            return
+
+        current_node = stack[-1]
+        raw = "\n".join(body_parts)
+        # Collapse single newlines (PDF line wrapping) but preserve paragraph breaks
+        normalized = re.sub(r"(?<!\n)\n(?!\n)", " ", raw)
+        normalized = re.sub(r" +", " ", normalized).strip()
+
+        if current_node.body:
+            current_node.body += "\n\n" + normalized
+        else:
+            current_node.body = normalized
+
+        # Recompute content hash after body update
+        current_node.content_hash = compute_content_hash(
+            current_node.heading, current_node.body
+        )
 
     def _flush_body(
         self, stack: list[DocumentNode], body_parts: list[str]

@@ -101,6 +101,7 @@ def get_nodes(doc_id: str, version: int | None = Query(default=None)):
         if not ver:
             raise HTTPException(404, "Version not found")
         nodes = session.query(Node).filter_by(version_id=ver.id)\
+            .filter(Node.parent_id.isnot(None))\
             .order_by(Node.position_index).all()
         return [{
             "id": n.id, "heading": n.heading, "level": n.level,
