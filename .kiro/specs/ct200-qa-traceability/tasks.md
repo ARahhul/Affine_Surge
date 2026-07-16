@@ -317,9 +317,9 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
 - [x] 12. Checkpoint — Browse & Search validation
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 13. Phase 7 — Selection and Generation
+- [x] 13. Phase 7 — Selection and Generation
 
-  - [~] 13.1 Implement selection service and API
+  - [x] 13.1 Implement selection service and API
     - Create `src/ct200/transport/routers/selection.py` with POST /api/v1/selections and GET /api/v1/selections/{id}
     - Create `src/ct200/application/selection.py` with CreateSelectionUseCase
     - Create immutable, version-pinned selections referencing specific nodes
@@ -327,7 +327,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Ensure selections are write-once (no mutation after creation)
     - _Requirements: 7.1, 7.2, CP-7.1_
 
-  - [~] 13.2 Implement NVIDIA NIM client with retry logic
+  - [x] 13.2 Implement NVIDIA NIM client with retry logic
     - Create `src/ct200/infrastructure/generation/nim_client.py` with HTTP client for NIM API
     - Implement JSON mode request, response parsing, token count extraction
     - Implement retry: on schema validation failure retry once, on transient HTTP errors retry with exponential backoff (max 3)
@@ -335,13 +335,13 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Enforce rate limit of 40 requests/minute against NIM (configurable)
     - _Requirements: 7.3, 7.6, 7.8, 7.9, CP-7.3_
 
-  - [~] 13.3 Implement prompt templates with injection hygiene
+  - [x] 13.3 Implement prompt templates with injection hygiene
     - Create `src/ct200/infrastructure/generation/prompt_templates.py`
     - Structurally separate system instructions from document content in prompts
     - Ensure document content cannot alter system instruction section
     - _Requirements: 7.3, 12.6, CP-7.4_
 
-  - [~] 13.4 Implement generation service and API
+  - [x] 13.4 Implement generation service and API
     - Create `src/ct200/transport/routers/generation.py` with POST /api/v1/generations and GET /api/v1/generations/{id}
     - Create `src/ct200/application/generation.py` with GenerateTestCasesUseCase
     - Validate NIM response against Pydantic schema; retry once on failure
@@ -351,7 +351,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Record input/output token counts from NIM response
     - _Requirements: 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.10, CP-7.2_
 
-  - [~] 13.5 Implement per-client rate limiting on generation endpoint
+  - [x] 13.5 Implement per-client rate limiting on generation endpoint
     - Configure slowapi with default 10 requests/minute per client on generation endpoint
     - _Requirements: 7.11, 12.2_
 
@@ -366,7 +366,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Use Hypothesis generating random valid and invalid JSON structures
     - **Validates: Requirements 7.4**
 
-- [~] 14. Checkpoint — Selection & Generation validation
+- [x] 14. Checkpoint — Selection & Generation validation
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 15. Phase 8 — Impact Analysis

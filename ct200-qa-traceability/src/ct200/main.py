@@ -47,14 +47,18 @@ def create_app() -> FastAPI:
 
     # Register routers
     from ct200.transport.routers.browse import router as browse_router
+    from ct200.transport.routers.generation import router as generation_router
     from ct200.transport.routers.health import router as health_router
     from ct200.transport.routers.ingestion import router as ingestion_router
     from ct200.transport.routers.search import router as search_router
+    from ct200.transport.routers.selection import router as selection_router
 
     app.include_router(health_router)
     app.include_router(ingestion_router)
     app.include_router(browse_router)
     app.include_router(search_router)
+    app.include_router(selection_router)
+    app.include_router(generation_router)
 
     return app
 
