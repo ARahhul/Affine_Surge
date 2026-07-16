@@ -8,7 +8,7 @@ Headers/footers are identified as text blocks that:
 
 import structlog
 
-from ct200.domain.entities import ContentBlock, ParsedContent, ParsedPage
+from ct200.models import ContentBlock, ParsedContent, ParsedPage
 
 logger = structlog.get_logger()
 

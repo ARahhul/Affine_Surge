@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ct200.domain.entities import BlockType, ParsedContent
+from ct200.models import BlockType, ParsedContent
 
 
 @dataclass

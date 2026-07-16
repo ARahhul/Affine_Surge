@@ -19,7 +19,7 @@ from ct200.models import (
     FileTooLargeError, InvalidFileFormatError, ParsingError,
     PathologicalInputError, TimeoutError as CT200TimeoutError,
 )
-from ct200.infrastructure.parser.header_footer_stripper import strip_headers_footers
+from ct200.parser.header_footer_stripper import strip_headers_footers
 
 logger = structlog.get_logger()
 

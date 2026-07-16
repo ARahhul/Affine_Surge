@@ -6,7 +6,7 @@ produces byte-identical output. Handles headings, tables, lists, and body text.
 
 import re
 
-from ct200.domain.entities import BlockType, ContentBlock, ParsedContent
+from ct200.models import BlockType, ContentBlock, ParsedContent
 
 
 def render_markdown(content: ParsedContent) -> str:
