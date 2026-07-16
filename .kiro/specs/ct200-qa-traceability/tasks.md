@@ -369,9 +369,9 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
 - [x] 14. Checkpoint — Selection & Generation validation
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 15. Phase 8 — Impact Analysis
+- [x] 15. Phase 8 — Impact Analysis
 
-  - [~] 15.1 Implement impact analyzer
+  - [x] 15.1 Implement impact analyzer
     - Create `src/ct200/infrastructure/impact/analyzer.py` implementing IImpactAnalyzer protocol
     - Compare each source_hash in a GenerationRecord against current content_hash of matching lineage_id node in latest version
     - Return "current" if all hashes match, "stale" if any differ
@@ -380,7 +380,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Report nodes whose lineage_id has no match in latest version as "missing"
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, CP-8.2, CP-8.3_
 
-  - [~] 15.2 Implement impact analysis API endpoint
+  - [x] 15.2 Implement impact analysis API endpoint
     - Create `src/ct200/transport/routers/impact.py` with GET /api/v1/impact/{generation_id}
     - Create `src/ct200/application/impact.py` with AnalyzeImpactUseCase
     - Ensure staleness is a computed view — never mutate historical generation records
@@ -397,7 +397,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Test impact analysis never mutates any field of the generation record
     - **Validates: Requirements 8.6**
 
-- [~] 16. Checkpoint — Impact Analysis validation
+- [x] 16. Checkpoint — Impact Analysis validation
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 17. Phase 9 — QA and Performance
