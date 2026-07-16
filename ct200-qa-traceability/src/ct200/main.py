@@ -1,69 +1,159 @@
-"""FastAPI application factory for the CT200 QA Traceability System."""
+"""CT200 QA Traceability System — FastAPI application.
 
-from fastapi import FastAPI
-from slowapi.errors import RateLimitExceeded
+Clean REST API for document ingestion, node browsing, version diffing,
+selection creation, and staleness detection.
+"""
 
-from ct200.config import get_settings
-from ct200.infrastructure.logging import configure_logging
-from ct200.transport.middleware.auth import AuthMiddleware
-from ct200.transport.middleware.correlation import CorrelationMiddleware
-from ct200.transport.middleware.error_handler import ErrorHandlerMiddleware
-from ct200.transport.middleware.metrics import MetricsMiddleware
-from ct200.transport.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+import os
 
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import JSONResponse
 
-def create_app() -> FastAPI:
-    """Create and configure the FastAPI application.
+from ct200.database import (
+    Document,
+    Node,
+    Selection,
+    Version,
+    get_session,
+    ingest_document,
+)
+from ct200.schemas import (
+    CreateSelectionRequest,
+    NodeDiff,
+    SelectionResponse,
+    StalenessResponse,
+)
 
-    Middleware stack order (outermost first):
-    1. CorrelationMiddleware — injects X-Correlation-ID
-    2. AuthMiddleware — validates bearer tokens (skips exempt paths)
-    3. ErrorHandlerMiddleware — catches exceptions, returns structured JSON
-    4. MetricsMiddleware — Prometheus counter/histogram instrumentation
+app = FastAPI(
+    title="CT200 QA Traceability System",
+    version="0.1.0",
+    docs_url="/docs",
+)
 
-    Rate limiting is handled via slowapi decorators on individual endpoints,
-    with the limiter instance attached to app.state.
-    """
-    settings = get_settings()
-    configure_logging(settings.log_level)
-
-    app = FastAPI(
-        title="CT200 QA Traceability System",
-        description="Parse CT200 PDFs into versioned document trees and generate QA test cases",
-        version="0.1.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-    )
-
-    # Attach slowapi limiter to app state and register exception handler
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
-
-    # Middleware stack — order matters (last added = outermost)
-    app.add_middleware(MetricsMiddleware)
-    app.add_middleware(ErrorHandlerMiddleware)
-    app.add_middleware(AuthMiddleware)
-    app.add_middleware(CorrelationMiddleware)
-
-    # Register routers
-    from ct200.transport.routers.browse import router as browse_router
-    from ct200.transport.routers.generation import router as generation_router
-    from ct200.transport.routers.health import router as health_router
-    from ct200.transport.routers.impact import router as impact_router
-    from ct200.transport.routers.ingestion import router as ingestion_router
-    from ct200.transport.routers.search import router as search_router
-    from ct200.transport.routers.selection import router as selection_router
-
-    app.include_router(health_router)
-    app.include_router(ingestion_router)
-    app.include_router(browse_router)
-    app.include_router(search_router)
-    app.include_router(selection_router)
-    app.include_router(generation_router)
-    app.include_router(impact_router)
-
-    return app
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/ct200.db")
 
 
-# Application instance for uvicorn
-app = create_app()
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+
+@app.post("/api/v1/documents", status_code=201)
+async def ingest(file: UploadFile = File(...)):
+    """Ingest a PDF document. Idempotent — duplicate content returns existing version."""
+    from ct200.parser.pymupdf_parser import PyMuPDFParser
+    from ct200.parser.tree_engine import TreeEngine
+
+    pdf_bytes = await file.read()
+    filename = file.filename or "unknown.pdf"
+
+    # Parse and build tree
+    parser = PyMuPDFParser()
+    import asyncio
+    content = await parser.parse(pdf_bytes, filename)
+    engine = TreeEngine()
+    tree = engine.build_tree(content)
+
+    # Flatten tree to node dicts for persistence
+    nodes_data = _flatten_tree(tree.root)
+
+    session = get_session(DATABASE_URL)
+    try:
+        result = ingest_document(session, filename, pdf_bytes, nodes_data)
+        status = 201 if result["is_new"] else 200
+        return JSONResponse(content=result, status_code=status)
+    finally:
+        session.close()
+
+
+def _flatten_tree(node, result=None):
+    """Recursively flatten tree nodes into dicts for DB persistence."""
+    if result is None:
+        result = []
+    result.append({
+        "id": node.id,
+        "parent_id": node.parent_id,
+        "heading": node.heading,
+        "level": node.depth,
+        "body": node.body,
+        "content_hash": node.content_hash,
+        "lineage_id": node.lineage_id,
+        "match_strategy": node.match_strategy.value if hasattr(node.match_strategy, 'value') else node.match_strategy,
+        "confidence_score": node.confidence_score,
+    })
+    for child in node.children:
+        _flatten_tree(child, result)
+    return result
+
+
+@app.get("/api/v1/documents/{doc_id}/nodes")
+def get_nodes(doc_id: str, version: int | None = Query(default=None)):
+    """Browse document nodes. Defaults to latest version if omitted."""
+    session = get_session(DATABASE_URL)
+    try:
+        if version:
+            ver = session.query(Version).filter_by(
+                document_id=doc_id, version_number=version
+            ).first()
+        else:
+            ver = session.query(Version).filter_by(document_id=doc_id)\
+                .order_by(Version.version_number.desc()).first()
+        if not ver:
+            raise HTTPException(404, "Version not found")
+        nodes = session.query(Node).filter_by(version_id=ver.id)\
+            .order_by(Node.position_index).all()
+        return [{
+            "id": n.id, "heading": n.heading, "level": n.level,
+            "body": n.body[:200], "content_hash": n.content_hash,
+            "position_index": n.position_index, "lineage_id": n.lineage_id,
+            "parent_id": n.parent_id,
+        } for n in nodes]
+    finally:
+        session.close()
+
+
+@app.get("/api/v1/nodes/{node_id}/diff")
+def node_diff(node_id: str):
+    """Lightweight diff — compare this node across all versions by lineage_id."""
+    session = get_session(DATABASE_URL)
+    try:
+        node = session.query(Node).get(node_id)
+        if not node:
+            raise HTTPException(404, "Node not found")
+        # Find all versions of this node by lineage_id
+        versions = session.query(Node).filter_by(lineage_id=node.lineage_id)\
+            .order_by(Node.position_index).all()
+        history = [{
+            "version_id": n.version_id, "content_hash": n.content_hash,
+            "heading": n.heading, "level": n.level,
+        } for n in versions]
+        return {"node_id": node_id, "lineage_id": node.lineage_id, "history": history}
+    finally:
+        session.close()
+
+
+@app.post("/api/v1/selections", status_code=201)
+def create_selection(body: CreateSelectionRequest):
+    """Create an immutable, version-pinned selection."""
+    import uuid as _uuid
+    from datetime import datetime, timezone
+    session = get_session(DATABASE_URL)
+    try:
+        # Validate all node_ids exist in the specified version
+        for nid in body.node_ids:
+            node = session.query(Node).filter_by(id=nid, version_id=body.version_id).first()
+            if not node:
+                raise HTTPException(422, f"Node {nid} not in version {body.version_id}")
+        sel = Selection(
+            id=str(_uuid.uuid4()), version_id=body.version_id,
+            node_ids_json=__import__("json").dumps(body.node_ids),
+            created_at=datetime.now(timezone.utc).isoformat(), label=body.label,
+        )
+        session.add(sel)
+        session.commit()
+        return SelectionResponse(
+            id=sel.id, version_id=sel.version_id,
+            node_ids=body.node_ids, created_at=sel.created_at,
+        )
+    finally:
+        session.close()

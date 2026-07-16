@@ -1,1 +1,0 @@
-"""IGenerationService protocol."""

@@ -1,1 +1,0 @@
-"""Impact analysis infrastructure."""

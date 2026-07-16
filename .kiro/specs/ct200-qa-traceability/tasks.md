@@ -397,7 +397,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Test impact analysis never mutates any field of the generation record
     - **Validates: Requirements 8.6**
 
-- [x] 16. Checkpoint — Impact Analysis validation
+- [ ] 16. Checkpoint — Impact Analysis validation
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 17. Phase 9 — QA and Performance

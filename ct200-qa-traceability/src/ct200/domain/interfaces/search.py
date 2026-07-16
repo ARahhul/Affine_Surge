@@ -1,1 +1,0 @@
-"""ISearchService protocol."""
