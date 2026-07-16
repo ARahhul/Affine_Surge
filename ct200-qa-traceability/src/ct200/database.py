@@ -40,6 +40,8 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA cache_size=-64000")  # 64MB page cache
     cursor.close()
 
 
@@ -200,8 +202,10 @@ def ingest_document(session: Session, name: str, pdf_bytes: bytes, nodes_data: l
     session.flush()
 
     # Persist nodes with position_index for deterministic ordering
+    # Use bulk insert for O(1) round-trips instead of N individual adds
+    node_objects = []
     for idx, node_data in enumerate(nodes_data):
-        node = Node(
+        node_objects.append(Node(
             id=node_data.get("id", str(uuid.uuid4())),
             version_id=version_id,
             parent_id=node_data.get("parent_id"),
@@ -213,8 +217,8 @@ def ingest_document(session: Session, name: str, pdf_bytes: bytes, nodes_data: l
             lineage_id=node_data.get("lineage_id", str(uuid.uuid4())),
             match_strategy=node_data.get("match_strategy", "new"),
             confidence_score=node_data.get("confidence_score", 1.0),
-        )
-        session.add(node)
+        ))
+    session.bulk_save_objects(node_objects)
 
     session.commit()
     return {"document_id": doc.id, "version_id": version_id,

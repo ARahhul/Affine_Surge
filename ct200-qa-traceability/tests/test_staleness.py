@@ -96,7 +96,7 @@ class TestUnchangedContentIsCurrent:
         session.commit()
 
         # Check staleness: source_hash matches latest → NOT stale
-        gen = session.query(Generation).get("gen-1")
+        gen = session.get(Generation, "gen-1")
         import json
         source_hashes = json.loads(gen.source_hashes_json)
         latest_node = session.query(Node).filter_by(
@@ -127,7 +127,7 @@ class TestNumericThresholdChangeIsStale:
 
         # source_hash != latest_hash → STALE
         import json
-        gen = session.query(Generation).get("gen-1")
+        gen = session.get(Generation, "gen-1")
         source_hashes = json.loads(gen.source_hashes_json)
         assert source_hashes["n1"] != new_hash  # Different = stale
 
@@ -153,7 +153,7 @@ class TestPunctuationChangeIsStale:
         session.commit()
 
         import json
-        gen = session.query(Generation).get("gen-1")
+        gen = session.get(Generation, "gen-1")
         source_hashes = json.loads(gen.source_hashes_json)
         # Even a single character change produces a different SHA-256
         assert source_hashes["n1"] != new_hash
@@ -184,7 +184,7 @@ class TestStalenessCheckIsReadOnly:
         _seed_generation(session)
 
         import json
-        gen = session.query(Generation).get("gen-1")
+        gen = session.get(Generation, "gen-1")
         original_status = gen.status
         original_hashes = gen.source_hashes_json
 

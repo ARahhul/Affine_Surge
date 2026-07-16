@@ -117,16 +117,18 @@ def node_diff(node_id: str):
     """Lightweight diff — compare this node across all versions by lineage_id."""
     session = get_session(DATABASE_URL)
     try:
-        node = session.query(Node).get(node_id)
+        node = session.get(Node, node_id)
         if not node:
             raise HTTPException(404, "Node not found")
-        # Find all versions of this node by lineage_id
-        versions = session.query(Node).filter_by(lineage_id=node.lineage_id)\
-            .order_by(Node.position_index).all()
+        # Single indexed query on ix_node_lineage
+        versions = session.query(
+            Node.version_id, Node.content_hash, Node.heading, Node.level
+        ).filter_by(lineage_id=node.lineage_id)\
+            .order_by(Node.version_id).all()
         history = [{
-            "version_id": n.version_id, "content_hash": n.content_hash,
-            "heading": n.heading, "level": n.level,
-        } for n in versions]
+            "version_id": v[0], "content_hash": v[1],
+            "heading": v[2], "level": v[3],
+        } for v in versions]
         return {"node_id": node_id, "lineage_id": node.lineage_id, "history": history}
     finally:
         session.close()
@@ -139,11 +141,15 @@ def create_selection(body: CreateSelectionRequest):
     from datetime import datetime, timezone
     session = get_session(DATABASE_URL)
     try:
-        # Validate all node_ids exist in the specified version
-        for nid in body.node_ids:
-            node = session.query(Node).filter_by(id=nid, version_id=body.version_id).first()
-            if not node:
-                raise HTTPException(422, f"Node {nid} not in version {body.version_id}")
+        # Batch validate: single query instead of N+1
+        valid_nodes = session.query(Node.id).filter(
+            Node.id.in_(body.node_ids),
+            Node.version_id == body.version_id,
+        ).all()
+        valid_ids = {row[0] for row in valid_nodes}
+        missing = [nid for nid in body.node_ids if nid not in valid_ids]
+        if missing:
+            raise HTTPException(422, f"Nodes not in version {body.version_id}: {missing}")
         sel = Selection(
             id=str(_uuid.uuid4()), version_id=body.version_id,
             node_ids_json=__import__("json").dumps(body.node_ids),
