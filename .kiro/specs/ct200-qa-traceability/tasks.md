@@ -230,9 +230,9 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
 - [x] 8. Checkpoint — Persistence validation
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. Phase 5 — Versioning
+- [x] 9. Phase 5 — Versioning
 
-  - [~] 9.1 Implement three-tier lineage matching strategy
+  - [x] 9.1 Implement three-tier lineage matching strategy
     - Create `src/ct200/infrastructure/versioning/lineage_matcher.py` implementing IVersioningEngine protocol
     - Tier 1: Exact Content_Hash match (confidence = 1.0)
     - Tier 2: Parent-lineage + heading match (confidence based on similarity)
@@ -240,12 +240,12 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Assign match_strategy and confidence_score to each node
     - _Requirements: 5.1, 5.2, CP-5.1_
 
-  - [~] 9.2 Implement needs_review flagging for low-confidence matches
+  - [x] 9.2 Implement needs_review flagging for low-confidence matches
     - When confidence_score < configurable threshold (default 0.75), assign needs_review status
     - Never auto-accept low-confidence matches
     - _Requirements: 5.3, CP-5.2_
 
-  - [~] 9.3 Implement version immutability and diff computation
+  - [x] 9.3 Implement version immutability and diff computation
     - Ensure new version ingestion never mutates previous version records or nodes
     - Create `src/ct200/application/versioning.py` with DiffVersionsUseCase
     - Compute diff returning added, removed, modified nodes with changed fields
@@ -268,7 +268,7 @@ This implementation plan follows the 10-phase engineering spec for the CT200 QA 
     - Test ingesting new version does not mutate any field of previous version or its nodes
     - **Validates: Requirements 5.4**
 
-- [~] 10. Checkpoint — Versioning validation
+- [x] 10. Checkpoint — Versioning validation
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 11. Phase 6 — Browse and Search
