@@ -1,0 +1,41 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+dist
+build
+.venv
+venv
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Testing
+.coverage
+htmlcov
+.pytest_cache
+.hypothesis
+
+# Environment
+.env
+.env.local
+
+# Data
+data/
+*.db
+
+# Documentation build artifacts
+docs/_build
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore

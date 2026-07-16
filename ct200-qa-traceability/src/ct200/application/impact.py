@@ -1,0 +1,1 @@
+"""Analyze impact use case."""

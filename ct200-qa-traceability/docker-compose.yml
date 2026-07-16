@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///app/data/ct200.db
+      - NVIDIA_NIM_API_KEY=${NVIDIA_NIM_API_KEY:-placeholder}
+      - NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
+      - NVIDIA_NIM_MODEL_ID=z-ai/glm-5.2
+      - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:-dev-secret-key}
+      - LOG_LEVEL=INFO
+      - RATE_LIMIT_INGEST=10/minute
+      - RATE_LIMIT_GENERATE=40/minute
+      - PARSE_TIMEOUT_SECONDS=120
+      - GENERATION_TIMEOUT_SECONDS=60
+      - CONFIDENCE_THRESHOLD=0.75
+      - MAX_UPLOAD_SIZE_MB=50
+    volumes:
+      - ct200-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  ct200-data:

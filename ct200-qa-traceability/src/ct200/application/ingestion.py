@@ -1,0 +1,1 @@
+"""Ingest document use case."""
