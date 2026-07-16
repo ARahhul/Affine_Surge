@@ -1,17 +1,19 @@
 """Tree construction engine — converts ParsedContent into a validated DocumentTree.
 
 Implements the ITreeEngine protocol. Handles:
-- Section-number-based hierarchy (1 → depth 1, 1.1 → depth 2, 1.1.1 → depth 3)
-- Cover page detection and skipping (content before first numbered section)
+- Multi-signal section heading detection (number + font/length + punctuation checks)
+- Section-number-based hierarchy with stack-validated depth
+- Smart cover page detection (metadata signals, not blanket skip)
 - Heading hierarchy construction for unnumbered heading blocks (fallback)
 - Duplicate heading disambiguation by (parent, heading, order_index)
-- Skipped heading levels (assigns to nearest valid ancestor)
+- Skipped heading levels (assigns to nearest valid ancestor) with warnings
 - Document order preservation (order_index from source sequence)
 - List item classification (body content, not separate nodes)
 - Multi-page table reconstruction (single node per table)
-- Body text normalization (collapse PDF line wrapping)
+- Body text normalization with table preservation
 - Content hash computation per node (SHA-256 of heading+body)
 - Full tree validation (single parent, no cycles, depth consistency, sibling indices)
+- Parser warnings accumulator for diagnostic visibility
 """
 
 import re
@@ -37,13 +39,60 @@ _SECTION_RE = re.compile(r"^(\d+(?:\.\d+)*)\s+(.*)")
 # Pattern to extract section numbers like "1.2.3" from heading text (legacy compat)
 _SECTION_NUMBER_RE = re.compile(r"^(\d+(?:\.\d+)*)\s")
 
+# Metadata signals for cover page detection
+_METADATA_SIGNALS = re.compile(
+    r"(confidential|proprietary|copyright|©|revision|rev\.|version|"
+    r"prepared by|approved by|document no|date:)",
+    re.IGNORECASE,
+)
+
 
 def _has_numbered_sections(blocks: list[ContentBlock]) -> bool:
-    """Check if ANY block in the document contains a numbered section heading."""
+    """Check if the document contains blocks that qualify as numbered section headings.
+
+    Uses multi-signal detection: a block must match the section number pattern
+    AND be short enough or classified as HEADING to count. This prevents
+    numbered list items like '3. Turn off device' from triggering numbered mode.
+    """
     for block in blocks:
         text = block.content.strip()
-        if _SECTION_RE.match(text):
+        if not text:
+            continue
+        match = _SECTION_RE.match(text)
+        if not match:
+            continue
+        remainder = match.group(2).strip()
+        # Reject empty remainder (bare numbers)
+        if not remainder:
+            continue
+        # Reject if it looks like a numbered list sentence (long + ends with period)
+        if remainder.endswith(('.', ',', ';')) and len(remainder) > 60:
+            continue
+        # Accept if parser classified as HEADING
+        if block.block_type == BlockType.HEADING:
             return True
+        # Accept if short enough to be a heading title
+        if len(remainder) < 80:
+            return True
+    return False
+
+
+def _is_cover_page_content(block: ContentBlock, text: str) -> bool:
+    """Determine if a block is likely cover-page metadata.
+
+    A block is metadata only if:
+    - It's on page 1
+    - AND has metadata signals (centered, very large font, very short text)
+      OR is very short (< 40 chars) with no sentence structure
+    """
+    if block.page_number != 1:
+        return False
+    # Has explicit metadata signals
+    if _METADATA_SIGNALS.search(text):
+        return True
+    # Very short text on page 1 without sentence structure (likely title/subtitle)
+    if len(text) < 40 and not text.endswith(('.', '!', '?')):
+        return True
     return False
 
 
@@ -64,7 +113,7 @@ class TreeEngine:
             version_id: Version ID to assign to all nodes.
 
         Returns:
-            Validated DocumentTree with computed hashes and metadata.
+            Validated DocumentTree with computed hashes, metadata, and warnings.
 
         Raises:
             TreeValidationError: If the resulting tree fails structural validation.
@@ -82,18 +131,26 @@ class TreeEngine:
             content_hash=compute_content_hash("root", ""),
         )
 
+        # Warnings accumulator
+        warnings: list[str] = []
+
         # Build tree structure from content blocks
         # Choose strategy based on whether the document has numbered sections
         if _has_numbered_sections(content.blocks):
-            self._populate_tree_numbered(root, content.blocks, version_id)
+            self._populate_tree_numbered(root, content.blocks, version_id, warnings)
         else:
-            self._populate_tree_headings(root, content.blocks, version_id)
+            self._populate_tree_headings(root, content.blocks, version_id, warnings)
 
         # Compute tree metadata
         node_count = self._count_nodes(root)
         max_depth = self._max_depth(root)
 
-        tree = DocumentTree(root=root, node_count=node_count, max_depth=max_depth)
+        tree = DocumentTree(
+            root=root,
+            node_count=node_count,
+            max_depth=max_depth,
+            warnings=warnings,
+        )
 
         # Validate structural integrity
         errors = self.validate(tree)
@@ -109,39 +166,110 @@ class TreeEngine:
             node_count=node_count,
             max_depth=max_depth,
             version_id=version_id,
+            warning_count=len(warnings),
         )
         return tree
 
+    def _is_section_heading(self, block: ContentBlock, text: str) -> tuple[bool, str]:
+        """Multi-signal heading detection. Returns (is_heading, section_number).
+
+        A numbered line is a section heading if:
+        - Matches section number pattern (1, 1.1, 1.1.1)
+        - Does NOT end with period/comma (that's a numbered list sentence)
+        - Is short (< 100 chars after the number)
+        - OR has heading-level font signals from the parser
+        """
+        match = _SECTION_RE.match(text)
+        if not match:
+            return False, ""
+
+        section_num = match.group(1)
+        remainder = match.group(2).strip()
+
+        # Reject if it looks like a numbered list sentence
+        if remainder.endswith(('.', ',', ';', ':')):
+            if len(remainder) > 60:  # Long text ending in period = paragraph
+                return False, ""
+
+        # Reject if remainder is empty (just a bare number)
+        if not remainder:
+            return False, ""
+
+        # Accept if parser already classified as HEADING
+        if block.block_type == BlockType.HEADING:
+            return True, section_num
+
+        # Accept if short enough to be a heading title
+        if len(remainder) < 80:
+            return True, section_num
+
+        return False, ""
+
     def _populate_tree_numbered(
-        self, root: DocumentNode, blocks: list[ContentBlock], version_id: str
+        self,
+        root: DocumentNode,
+        blocks: list[ContentBlock],
+        version_id: str,
+        warnings: list[str],
     ) -> None:
-        """Build tree using section numbers for hierarchy.
+        """Build tree using section numbers for hierarchy with multi-signal detection.
 
         Algorithm:
-        1. Scan blocks for numbered sections (e.g., "1.", "1.1", "2.3.1")
-        2. Everything before the first numbered section is ignored (cover page)
-        3. Section number depth determines node depth (1→1, 1.1→2, 1.1.1→3)
+        1. Scan blocks for numbered section headings (multi-signal check)
+        2. Pre-numbered content is classified as metadata only if it has
+           cover page signals; otherwise attached to root as body
+        3. Depth is always parent.depth + 1 (validated against stack)
         4. Non-numbered content between sections becomes body of current section
-        5. Body text is normalized: single newlines collapsed, double preserved
+        5. Body text is normalized with table content preserved verbatim
         """
         stack: list[DocumentNode] = [root]
         child_counters: dict[str, int] = {root.id: 0}
         current_body_parts: list[str] = []
         found_first_section = False
+        pre_section_content: list[str] = []
+        seen_headings: set[str] = set()
 
         for block in blocks:
             text = block.content.strip()
             if not text:
                 continue
 
-            # Check if this block starts with a section number
-            match = _SECTION_RE.match(text)
+            # Multi-signal heading detection
+            is_heading, section_num = self._is_section_heading(block, text)
 
-            if match:
-                found_first_section = True
-                section_num = match.group(1)  # e.g., "1.2.3"
+            if is_heading:
+                if not found_first_section:
+                    found_first_section = True
+                    # Handle pre-numbered content
+                    if pre_section_content:
+                        # Classify: metadata (skip with warning) vs real content (attach to root)
+                        non_metadata_parts = []
+                        for pre_text in pre_section_content:
+                            # Find the original block for page info - approximate with page 1
+                            if _is_cover_page_content(
+                                ContentBlock(
+                                    block_type=BlockType.BODY,
+                                    content=pre_text,
+                                    page_number=1,
+                                ),
+                                pre_text,
+                            ):
+                                warnings.append(
+                                    f"Skipped cover-page metadata: '{pre_text[:50]}...'"
+                                    if len(pre_text) > 50
+                                    else f"Skipped cover-page metadata: '{pre_text}'"
+                                )
+                            else:
+                                non_metadata_parts.append(pre_text)
+                        # Attach non-metadata pre-section content to root body
+                        if non_metadata_parts:
+                            root.body = "\n\n".join(non_metadata_parts)
+                            root.content_hash = compute_content_hash(
+                                root.heading, root.body
+                            )
+
                 heading_text = text  # Keep full text including number
-                target_depth = section_num.count(".") + 1  # "1"→1, "1.1"→2
+                target_depth = section_num.count(".") + 1  # Initial estimate
 
                 # Flush body to current node
                 self._flush_body_normalized(stack, current_body_parts)
@@ -151,6 +279,32 @@ class TreeEngine:
                 while len(stack) > 1 and stack[-1].depth >= target_depth:
                     stack.pop()
                 parent = stack[-1]
+
+                # Depth is always parent.depth + 1 (validated, not raw dot count)
+                actual_depth = parent.depth + 1
+
+                # Warn if dot-count depth doesn't match structural depth
+                if target_depth != actual_depth and actual_depth > 1:
+                    warnings.append(
+                        f"Depth adjusted for '{heading_text[:60]}': "
+                        f"dot-count suggests depth {target_depth}, "
+                        f"structural parent gives depth {actual_depth}"
+                    )
+
+                # Check for skipped levels
+                if target_depth > actual_depth + 1:
+                    warnings.append(
+                        f"Skipped heading level: '{heading_text[:60]}' "
+                        f"jumped from depth {parent.depth} to target {target_depth}"
+                    )
+
+                # Check for duplicate headings
+                heading_key = f"{parent.id}:{heading_text}"
+                if heading_key in seen_headings:
+                    warnings.append(
+                        f"Duplicate heading under same parent: '{heading_text[:60]}'"
+                    )
+                seen_headings.add(heading_key)
 
                 # Create node
                 if parent.id not in child_counters:
@@ -164,7 +318,7 @@ class TreeEngine:
                     parent_id=parent.id,
                     heading=heading_text,
                     body="",
-                    depth=parent.depth + 1,
+                    depth=actual_depth,
                     parsed_number=section_num,
                     order_index=order_idx,
                     lineage_id=str(uuid.uuid4()),
@@ -209,12 +363,18 @@ class TreeEngine:
                 else:
                     # Body/table/list content for current section
                     current_body_parts.append(text)
-            # else: before first section = cover page, skip
+            else:
+                # Before first section — accumulate for later classification
+                pre_section_content.append(text)
 
         self._flush_body_normalized(stack, current_body_parts)
 
     def _populate_tree_headings(
-        self, root: DocumentNode, blocks: list[ContentBlock], version_id: str
+        self,
+        root: DocumentNode,
+        blocks: list[ContentBlock],
+        version_id: str,
+        warnings: list[str],
     ) -> None:
         """Build tree structure from ordered content blocks using heading levels.
 
@@ -235,6 +395,7 @@ class TreeEngine:
         child_counters: dict[str, int] = {root.id: 0}
         # Accumulate body content for the current active heading
         current_body_parts: list[str] = []
+        seen_headings: set[str] = set()
 
         for block in blocks:
             if block.block_type == BlockType.HEADING and block.level > 0:
@@ -249,6 +410,22 @@ class TreeEngine:
                     stack.pop()
 
                 parent = stack[-1]
+                actual_depth = parent.depth + 1
+
+                # Warn on skipped levels
+                if target_depth > actual_depth + 1:
+                    warnings.append(
+                        f"Skipped heading level: '{block.content[:60]}' "
+                        f"at level {target_depth}, placed at depth {actual_depth}"
+                    )
+
+                # Check for duplicate headings under same parent
+                heading_key = f"{parent.id}:{block.content}"
+                if heading_key in seen_headings:
+                    warnings.append(
+                        f"Duplicate heading under same parent: '{block.content[:60]}'"
+                    )
+                seen_headings.add(heading_key)
 
                 # Assign order_index for this child under its parent
                 if parent.id not in child_counters:
@@ -264,7 +441,7 @@ class TreeEngine:
                     parent_id=parent.id,
                     heading=block.content,
                     body="",
-                    depth=parent.depth + 1,
+                    depth=actual_depth,
                     parsed_number=self._extract_parsed_number(block.content),
                     order_index=order_idx,
                     lineage_id=str(uuid.uuid4()),
@@ -292,29 +469,60 @@ class TreeEngine:
     def _flush_body_normalized(
         self, stack: list[DocumentNode], body_parts: list[str]
     ) -> None:
-        """Flush accumulated body parts with text normalization (for numbered-section docs).
+        """Flush accumulated body parts with text normalization, preserving tables.
 
         Normalizes PDF line wrapping: collapses single newlines into spaces,
-        preserves double newlines as paragraph breaks.
+        preserves double newlines as paragraph breaks. Table content (lines
+        starting with '|') is preserved verbatim.
         """
         if not body_parts or len(stack) <= 1:
             return
 
         current_node = stack[-1]
-        raw = "\n".join(body_parts)
-        # Collapse single newlines (PDF line wrapping) but preserve paragraph breaks
-        normalized = re.sub(r"(?<!\n)\n(?!\n)", " ", raw)
-        normalized = re.sub(r" +", " ", normalized).strip()
+
+        # Separate table content from regular text
+        result_parts: list[str] = []
+        regular_lines: list[str] = []
+
+        for part in body_parts:
+            if part.strip().startswith('|'):
+                # Flush regular text first
+                if regular_lines:
+                    normalized = self._normalize_text_block(regular_lines)
+                    if normalized:
+                        result_parts.append(normalized)
+                    regular_lines = []
+                # Preserve table verbatim
+                result_parts.append(part)
+            else:
+                regular_lines.append(part)
+
+        # Flush remaining regular text
+        if regular_lines:
+            normalized = self._normalize_text_block(regular_lines)
+            if normalized:
+                result_parts.append(normalized)
+
+        new_body = '\n\n'.join(result_parts)
 
         if current_node.body:
-            current_node.body += "\n\n" + normalized
+            current_node.body += '\n\n' + new_body
         else:
-            current_node.body = normalized
+            current_node.body = new_body
 
         # Recompute content hash after body update
         current_node.content_hash = compute_content_hash(
             current_node.heading, current_node.body
         )
+
+    @staticmethod
+    def _normalize_text_block(lines: list[str]) -> str:
+        """Normalize a list of text lines by collapsing PDF line wrapping."""
+        raw = "\n".join(lines)
+        # Collapse single newlines (PDF line wrapping) but preserve paragraph breaks
+        normalized = re.sub(r"(?<!\n)\n(?!\n)", " ", raw)
+        normalized = re.sub(r" +", " ", normalized).strip()
+        return normalized
 
     def _flush_body(
         self, stack: list[DocumentNode], body_parts: list[str]

@@ -77,6 +77,7 @@ class DocumentTree(BaseModel):
     root: DocumentNode
     node_count: int = 0
     max_depth: int = 0
+    warnings: list[str] = Field(default_factory=list)
 
 
 class LineageMatch(BaseModel):
