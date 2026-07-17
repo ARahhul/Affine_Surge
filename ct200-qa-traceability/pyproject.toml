@@ -69,3 +69,16 @@ markers = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ct200"]
+
+[tool.coverage.run]
+source = ["src/ct200"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
+omit = [
+    "src/ct200/generation/nim_client.py",
+    "src/ct200/generation/prompt_templates.py",
+]
