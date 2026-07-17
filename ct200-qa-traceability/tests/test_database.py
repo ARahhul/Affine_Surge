@@ -18,11 +18,7 @@ from sqlalchemy.orm import sessionmaker
 
 from ct200.database import (
     Base,
-    Document,
-    Generation,
     Node,
-    Selection,
-    Version,
     compute_content_hash,
     ingest_document,
 )
@@ -46,9 +42,16 @@ class TestSQLitePragmas:
     def test_foreign_keys_enforced(self):
         s = _session()
         # Inserting a node without a valid version_id should fail
-        node = Node(id="n1", version_id="nonexistent", heading="X",
-                    level=1, body="", content_hash="h", position_index=0,
-                    lineage_id="l1")
+        node = Node(
+            id="n1",
+            version_id="nonexistent",
+            heading="X",
+            level=1,
+            body="",
+            content_hash="h",
+            position_index=0,
+            lineage_id="l1",
+        )
         s.add(node)
         try:
             s.commit()
@@ -62,8 +65,16 @@ class TestIdempotentIngestion:
     def test_same_content_returns_existing_version(self):
         s = _session()
         pdf = b"%PDF-1.0 test content for idempotency"
-        nodes = [{"id": "n1", "heading": "H1", "level": 1, "body": "B",
-                  "content_hash": "ch1", "lineage_id": "l1"}]
+        nodes = [
+            {
+                "id": "n1",
+                "heading": "H1",
+                "level": 1,
+                "body": "B",
+                "content_hash": "ch1",
+                "lineage_id": "l1",
+            }
+        ]
         r1 = ingest_document(s, "doc.pdf", pdf, nodes)
         r2 = ingest_document(s, "doc.pdf", pdf, nodes)
         assert r1["is_new"] is True
@@ -73,11 +84,27 @@ class TestIdempotentIngestion:
 
     def test_different_content_creates_new_version(self):
         s = _session()
-        nodes = [{"id": str(uuid.uuid4()), "heading": "H", "level": 1,
-                  "body": "B", "content_hash": "c", "lineage_id": "l"}]
+        nodes = [
+            {
+                "id": str(uuid.uuid4()),
+                "heading": "H",
+                "level": 1,
+                "body": "B",
+                "content_hash": "c",
+                "lineage_id": "l",
+            }
+        ]
         r1 = ingest_document(s, "doc.pdf", b"content-v1", nodes)
-        nodes2 = [{"id": str(uuid.uuid4()), "heading": "H2", "level": 1,
-                   "body": "B2", "content_hash": "c2", "lineage_id": "l2"}]
+        nodes2 = [
+            {
+                "id": str(uuid.uuid4()),
+                "heading": "H2",
+                "level": 1,
+                "body": "B2",
+                "content_hash": "c2",
+                "lineage_id": "l2",
+            }
+        ]
         r2 = ingest_document(s, "doc.pdf", b"content-v2", nodes2)
         assert r1["version_number"] == 1
         assert r2["version_number"] == 2
@@ -87,12 +114,24 @@ class TestIdempotentIngestion:
 class TestBulkNodePersistence:
     def test_all_nodes_persisted_in_order(self):
         s = _session()
-        nodes = [{"id": f"n{i}", "heading": f"H{i}", "level": 1,
-                  "body": f"Body {i}", "content_hash": f"hash{i}",
-                  "lineage_id": f"lin{i}"} for i in range(10)]
+        nodes = [
+            {
+                "id": f"n{i}",
+                "heading": f"H{i}",
+                "level": 1,
+                "body": f"Body {i}",
+                "content_hash": f"hash{i}",
+                "lineage_id": f"lin{i}",
+            }
+            for i in range(10)
+        ]
         result = ingest_document(s, "bulk.pdf", b"bulk-content", nodes)
-        persisted = s.query(Node).filter_by(version_id=result["version_id"])\
-            .order_by(Node.position_index).all()
+        persisted = (
+            s.query(Node)
+            .filter_by(version_id=result["version_id"])
+            .order_by(Node.position_index)
+            .all()
+        )
         assert len(persisted) == 10
         for i, node in enumerate(persisted):
             assert node.position_index == i
@@ -120,8 +159,15 @@ class TestVersionOrdering:
     def test_versions_auto_increment(self):
         s = _session()
         for i in range(5):
-            nodes = [{"id": str(uuid.uuid4()), "heading": f"V{i}",
-                      "level": 1, "body": "", "content_hash": f"ch{i}",
-                      "lineage_id": f"l{i}"}]
+            nodes = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "heading": f"V{i}",
+                    "level": 1,
+                    "body": "",
+                    "content_hash": f"ch{i}",
+                    "lineage_id": f"l{i}",
+                }
+            ]
             r = ingest_document(s, "doc.pdf", f"v{i}".encode(), nodes)
             assert r["version_number"] == i + 1

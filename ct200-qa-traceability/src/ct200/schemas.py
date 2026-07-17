@@ -2,8 +2,8 @@
 
 from pydantic import BaseModel, Field
 
-
 # --- Node & Tree ---
+
 
 class NodeResponse(BaseModel):
     id: str
@@ -31,6 +31,7 @@ class DiffResponse(BaseModel):
 
 # --- Selection ---
 
+
 class CreateSelectionRequest(BaseModel):
     version_id: str
     node_ids: list[str] = Field(..., min_length=1)
@@ -46,6 +47,7 @@ class SelectionResponse(BaseModel):
 
 # --- Generation ---
 
+
 class CreateGenerationRequest(BaseModel):
     selection_id: str
 
@@ -60,6 +62,7 @@ class GenerationResponse(BaseModel):
 
 
 # --- Impact / Staleness ---
+
 
 class StalenessResponse(BaseModel):
     generation_id: str

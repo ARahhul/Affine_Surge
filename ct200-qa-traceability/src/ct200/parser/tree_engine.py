@@ -66,7 +66,7 @@ def _has_numbered_sections(blocks: list[ContentBlock]) -> bool:
         if not remainder:
             continue
         # Reject if it looks like a numbered list sentence (long + ends with period)
-        if remainder.endswith(('.', ',', ';')) and len(remainder) > 60:
+        if remainder.endswith((".", ",", ";")) and len(remainder) > 60:
             continue
         # Accept if parser classified as HEADING
         if block.block_type == BlockType.HEADING:
@@ -91,9 +91,7 @@ def _is_cover_page_content(block: ContentBlock, text: str) -> bool:
     if _METADATA_SIGNALS.search(text):
         return True
     # Very short text on page 1 without sentence structure (likely title/subtitle)
-    if len(text) < 40 and not text.endswith(('.', '!', '?')):
-        return True
-    return False
+    return len(text) < 40 and not text.endswith((".", "!", "?"))
 
 
 class TreeEngine:
@@ -187,9 +185,8 @@ class TreeEngine:
         remainder = match.group(2).strip()
 
         # Reject if it looks like a numbered list sentence
-        if remainder.endswith(('.', ',', ';', ':')):
-            if len(remainder) > 60:  # Long text ending in period = paragraph
-                return False, ""
+        if remainder.endswith((".", ",", ";", ":")) and len(remainder) > 60:
+            return False, ""
 
         # Reject if remainder is empty (just a bare number)
         if not remainder:
@@ -264,9 +261,7 @@ class TreeEngine:
                         # Attach non-metadata pre-section content to root body
                         if non_metadata_parts:
                             root.body = "\n\n".join(non_metadata_parts)
-                            root.content_hash = compute_content_hash(
-                                root.heading, root.body
-                            )
+                            root.content_hash = compute_content_hash(root.heading, root.body)
 
                 heading_text = text  # Keep full text including number
                 target_depth = section_num.count(".") + 1  # Initial estimate
@@ -301,9 +296,7 @@ class TreeEngine:
                 # Check for duplicate headings
                 heading_key = f"{parent.id}:{heading_text}"
                 if heading_key in seen_headings:
-                    warnings.append(
-                        f"Duplicate heading under same parent: '{heading_text[:60]}'"
-                    )
+                    warnings.append(f"Duplicate heading under same parent: '{heading_text[:60]}'")
                 seen_headings.add(heading_key)
 
                 # Create node
@@ -330,11 +323,7 @@ class TreeEngine:
 
             elif found_first_section:
                 # Check if a HEADING-type block without number should create a sub-node
-                if (
-                    block.block_type == BlockType.HEADING
-                    and block.level > 0
-                    and len(text) < 80
-                ):
+                if block.block_type == BlockType.HEADING and block.level > 0 and len(text) < 80:
                     self._flush_body_normalized(stack, current_body_parts)
                     current_body_parts = []
 
@@ -422,9 +411,7 @@ class TreeEngine:
                 # Check for duplicate headings under same parent
                 heading_key = f"{parent.id}:{block.content}"
                 if heading_key in seen_headings:
-                    warnings.append(
-                        f"Duplicate heading under same parent: '{block.content[:60]}'"
-                    )
+                    warnings.append(f"Duplicate heading under same parent: '{block.content[:60]}'")
                 seen_headings.add(heading_key)
 
                 # Assign order_index for this child under its parent
@@ -466,9 +453,7 @@ class TreeEngine:
         # Flush any remaining body content to the last heading node
         self._flush_body(stack, current_body_parts)
 
-    def _flush_body_normalized(
-        self, stack: list[DocumentNode], body_parts: list[str]
-    ) -> None:
+    def _flush_body_normalized(self, stack: list[DocumentNode], body_parts: list[str]) -> None:
         """Flush accumulated body parts with text normalization, preserving tables.
 
         Normalizes PDF line wrapping: collapses single newlines into spaces,
@@ -485,7 +470,7 @@ class TreeEngine:
         regular_lines: list[str] = []
 
         for part in body_parts:
-            if part.strip().startswith('|'):
+            if part.strip().startswith("|"):
                 # Flush regular text first
                 if regular_lines:
                     normalized = self._normalize_text_block(regular_lines)
@@ -503,17 +488,15 @@ class TreeEngine:
             if normalized:
                 result_parts.append(normalized)
 
-        new_body = '\n\n'.join(result_parts)
+        new_body = "\n\n".join(result_parts)
 
         if current_node.body:
-            current_node.body += '\n\n' + new_body
+            current_node.body += "\n\n" + new_body
         else:
             current_node.body = new_body
 
         # Recompute content hash after body update
-        current_node.content_hash = compute_content_hash(
-            current_node.heading, current_node.body
-        )
+        current_node.content_hash = compute_content_hash(current_node.heading, current_node.body)
 
     @staticmethod
     def _normalize_text_block(lines: list[str]) -> str:
@@ -524,9 +507,7 @@ class TreeEngine:
         normalized = re.sub(r" +", " ", normalized).strip()
         return normalized
 
-    def _flush_body(
-        self, stack: list[DocumentNode], body_parts: list[str]
-    ) -> None:
+    def _flush_body(self, stack: list[DocumentNode], body_parts: list[str]) -> None:
         """Flush accumulated body parts into the current heading node and recompute hash."""
         if not body_parts or len(stack) <= 1:
             return
@@ -540,9 +521,7 @@ class TreeEngine:
             current_node.body = new_body
 
         # Recompute content hash after body update (Req 3.12)
-        current_node.content_hash = compute_content_hash(
-            current_node.heading, current_node.body
-        )
+        current_node.content_hash = compute_content_hash(current_node.heading, current_node.body)
 
     def validate(self, tree: DocumentTree) -> list[str]:
         """Validate tree structural integrity.
@@ -618,9 +597,7 @@ class TreeEngine:
 
         # Recurse into children
         for child in node.children:
-            self._validate_node(
-                child, node.id, node.depth + 1, visited, errors
-            )
+            self._validate_node(child, node.id, node.depth + 1, visited, errors)
 
     def _count_nodes(self, node: DocumentNode) -> int:
         """Count total nodes in tree including the given node."""

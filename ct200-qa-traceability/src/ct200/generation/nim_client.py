@@ -108,9 +108,7 @@ class NIMClient:
         async with self._lock:
             now = time.monotonic()
             # Remove timestamps older than 60 seconds
-            self._request_timestamps = [
-                ts for ts in self._request_timestamps if now - ts < 60.0
-            ]
+            self._request_timestamps = [ts for ts in self._request_timestamps if now - ts < 60.0]
             if len(self._request_timestamps) >= self.rate_limit_rpm:
                 # Wait until the oldest request falls out of the window
                 sleep_time = 60.0 - (now - self._request_timestamps[0])
@@ -119,9 +117,7 @@ class NIMClient:
                     await asyncio.sleep(sleep_time)
             self._request_timestamps.append(time.monotonic())
 
-    async def _make_request(
-        self, messages: list[dict[str, str]]
-    ) -> httpx.Response:
+    async def _make_request(self, messages: list[dict[str, str]]) -> httpx.Response:
         """Make a single HTTP request to the NIM API with timeout."""
         await self._enforce_rate_limit()
 
@@ -132,9 +128,7 @@ class NIMClient:
             "max_tokens": 4096,
         }
 
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(self.timeout_seconds)
-        ) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout_seconds)) as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 headers={
@@ -145,9 +139,7 @@ class NIMClient:
             )
         return response
 
-    async def _request_with_transient_retry(
-        self, messages: list[dict[str, str]]
-    ) -> httpx.Response:
+    async def _request_with_transient_retry(self, messages: list[dict[str, str]]) -> httpx.Response:
         """Execute request with exponential backoff on transient errors."""
         last_error: Exception | None = None
 
@@ -174,8 +166,7 @@ class NIMClient:
 
                 # Non-transient error — fail immediately
                 raise NIMClientError(
-                    f"NIM API error HTTP {response.status_code}: "
-                    f"{response.text[:500]}"
+                    f"NIM API error HTTP {response.status_code}: " f"{response.text[:500]}"
                 )
 
             except httpx.TimeoutException as exc:
@@ -211,9 +202,7 @@ class NIMClient:
         parsed = json.loads(content)
         return GenerationOutput.model_validate(parsed)
 
-    async def generate(
-        self, messages: list[dict[str, str]]
-    ) -> NIMResponse:
+    async def generate(self, messages: list[dict[str, str]]) -> NIMResponse:
         """Generate test cases via NIM API.
 
         Handles full lifecycle:
@@ -235,9 +224,7 @@ class NIMClient:
         try:
             output = self._validate_output(parsed["content"])
         except (json.JSONDecodeError, ValidationError) as first_error:
-            logger.warning(
-                f"Schema validation failed, retrying once: {first_error}"
-            )
+            logger.warning(f"Schema validation failed, retrying once: {first_error}")
             # Retry once on schema validation failure
             response = await self._request_with_transient_retry(messages)
             parsed = self._parse_response(response)

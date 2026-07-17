@@ -16,25 +16,39 @@ os.environ.setdefault("AUTH_SECRET_KEY", "test")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from ct200.versioning.lineage_matcher import LineageMatcher
 from ct200.models import DocumentNode, DocumentTree
+from ct200.versioning.lineage_matcher import LineageMatcher
 
 
-def _node(id, heading="", body="", depth=0, order_index=0,
-          content_hash="", lineage_id="", version_id="v1"):
+def _node(
+    node_id,
+    heading="",
+    body="",
+    depth=0,
+    order_index=0,
+    content_hash="",
+    lineage_id="",
+    version_id="v1",
+):
     return DocumentNode(
-        id=id, version_id=version_id, heading=heading, body=body,
-        depth=depth, order_index=order_index,
-        content_hash=content_hash or f"hash-{id}",
-        lineage_id=lineage_id or f"lin-{id}",
+        id=node_id,
+        version_id=version_id,
+        heading=heading,
+        body=body,
+        depth=depth,
+        order_index=order_index,
+        content_hash=content_hash or f"hash-{node_id}",
+        lineage_id=lineage_id or f"lin-{node_id}",
     )
 
 
 def _tree(root):
     def _count(n):
         return 1 + sum(_count(c) for c in n.children)
+
     def _maxd(n):
         return n.depth if not n.children else max(_maxd(c) for c in n.children)
+
     return DocumentTree(root=root, node_count=_count(root), max_depth=_maxd(root))
 
 
@@ -60,10 +74,22 @@ class TestExactHashMatch:
 
 class TestHeadingMatch:
     def test_same_heading_different_hash_uses_heading_strategy(self):
-        prev = _node("p", heading="Safety Protocol", depth=1, order_index=0,
-                     content_hash="old-hash", lineage_id="lin-safety")
-        new = _node("n", heading="Safety Protocol", depth=1, order_index=0,
-                    content_hash="new-hash", version_id="v2")
+        prev = _node(
+            "p",
+            heading="Safety Protocol",
+            depth=1,
+            order_index=0,
+            content_hash="old-hash",
+            lineage_id="lin-safety",
+        )
+        new = _node(
+            "n",
+            heading="Safety Protocol",
+            depth=1,
+            order_index=0,
+            content_hash="new-hash",
+            version_id="v2",
+        )
         matcher = LineageMatcher(confidence_threshold=0.75)
         matches = matcher.match_lineage(_tree(new), _tree(prev))
         assert matches[0].strategy.value == "heading"
@@ -73,10 +99,22 @@ class TestHeadingMatch:
 
 class TestLowConfidenceNeedsReview:
     def test_positional_match_below_threshold_flagged(self):
-        prev = _node("p", heading="Old Title", depth=1, order_index=0,
-                     content_hash="h-old", lineage_id="lin-pos")
-        new = _node("n", heading="Completely Different", depth=1, order_index=0,
-                    content_hash="h-new", version_id="v2")
+        prev = _node(
+            "p",
+            heading="Old Title",
+            depth=1,
+            order_index=0,
+            content_hash="h-old",
+            lineage_id="lin-pos",
+        )
+        new = _node(
+            "n",
+            heading="Completely Different",
+            depth=1,
+            order_index=0,
+            content_hash="h-new",
+            version_id="v2",
+        )
         matcher = LineageMatcher(confidence_threshold=0.75)
         matches = matcher.match_lineage(_tree(new), _tree(prev))
         assert matches[0].strategy.value == "positional"

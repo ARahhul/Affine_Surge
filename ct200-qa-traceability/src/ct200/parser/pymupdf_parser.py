@@ -11,13 +11,18 @@ import time
 from typing import Any
 
 import fitz  # PyMuPDF
-
 import structlog
 
 from ct200.models import (
-    BlockType, ContentBlock, ParsedContent, ParsedPage,
-    FileTooLargeError, InvalidFileFormatError, ParsingError,
-    PathologicalInputError, TimeoutError as CT200TimeoutError,
+    BlockType,
+    ContentBlock,
+    CT200TimeoutError,
+    FileTooLargeError,
+    InvalidFileFormatError,
+    ParsedContent,
+    ParsedPage,
+    ParsingError,
+    PathologicalInputError,
 )
 from ct200.parser.header_footer_stripper import strip_headers_footers
 
@@ -87,11 +92,11 @@ class PyMuPDFParser:
                 total_blocks=len(result.blocks),
             )
             return result
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise CT200TimeoutError(
                 f"PDF parsing exceeded {self._timeout_seconds}s timeout",
                 details={"filename": filename, "timeout_seconds": self._timeout_seconds},
-            )
+            ) from None
         except (
             CT200TimeoutError,
             PathologicalInputError,
@@ -144,7 +149,8 @@ class PyMuPDFParser:
                 max_depth = max(entry[0] for entry in toc)
                 if max_depth > MAX_NESTING_DEPTH:
                     raise PathologicalInputError(
-                        f"Document outline nesting depth ({max_depth}) exceeds limit ({MAX_NESTING_DEPTH})",
+                        f"Document outline nesting depth ({max_depth}) "
+                        f"exceeds limit ({MAX_NESTING_DEPTH})",
                         details={"filename": filename, "max_depth": max_depth},
                     )
 
@@ -276,9 +282,7 @@ class PyMuPDFParser:
             if self._overlaps_table(block_bbox, table_bboxes):
                 continue
 
-            block_content = self._process_text_block(
-                block, page_number, median_font_size, columns
-            )
+            block_content = self._process_text_block(block, page_number, median_font_size, columns)
             if block_content:
                 text_blocks.extend(block_content)
 
@@ -330,10 +334,7 @@ class PyMuPDFParser:
         columns: list[tuple[float, float]] = []
         for i, cluster in enumerate(clusters):
             x_start = min(cluster)
-            if i + 1 < len(clusters):
-                x_end = min(clusters[i + 1]) - 1.0
-            else:
-                x_end = page_width
+            x_end = min(clusters[i + 1]) - 1.0 if i + 1 < len(clusters) else page_width
             columns.append((x_start, x_end))
 
         return columns
@@ -418,9 +419,7 @@ class PyMuPDFParser:
                 )
 
             # Classify the line
-            block_type, level = self._classify_line(
-                text, max_font_size, is_bold, median_font_size
-            )
+            block_type, level = self._classify_line(text, max_font_size, is_bold, median_font_size)
 
             results.append(
                 ContentBlock(
@@ -472,9 +471,7 @@ class PyMuPDFParser:
 
         return BlockType.BODY, 0
 
-    def _extract_table(
-        self, table: Any, page_number: int
-    ) -> ContentBlock | None:
+    def _extract_table(self, table: Any, page_number: int) -> ContentBlock | None:
         """Extract a table as a markdown-formatted content block.
 
         Args:

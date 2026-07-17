@@ -66,13 +66,9 @@ def strip_headers_footers(
     repeated_texts: set[str] = set()
 
     # Check top margin
-    repeated_texts.update(
-        _find_consecutive_repeats(top_texts_by_page, content.total_pages)
-    )
+    repeated_texts.update(_find_consecutive_repeats(top_texts_by_page, content.total_pages))
     # Check bottom margin
-    repeated_texts.update(
-        _find_consecutive_repeats(bottom_texts_by_page, content.total_pages)
-    )
+    repeated_texts.update(_find_consecutive_repeats(bottom_texts_by_page, content.total_pages))
 
     if not repeated_texts:
         return content, 0
@@ -117,9 +113,7 @@ def strip_headers_footers(
     )
 
 
-def _find_consecutive_repeats(
-    texts_by_page: dict[int, list[str]], total_pages: int
-) -> set[str]:
+def _find_consecutive_repeats(texts_by_page: dict[int, list[str]], total_pages: int) -> set[str]:
     """Find texts appearing on 2+ consecutive pages."""
     all_texts: set[str] = set()
     for texts in texts_by_page.values():

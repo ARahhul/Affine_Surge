@@ -9,9 +9,9 @@ SQLite configured with WAL mode and synchronous=NORMAL for write performance.
 """
 
 import hashlib
-import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import (
     Column,
@@ -34,8 +34,9 @@ class Base(DeclarativeBase):
 
 # --- SQLite PRAGMAs on every connection ---
 
+
 @event.listens_for(Engine, "connect")
-def _set_sqlite_pragma(dbapi_connection, connection_record):
+def _set_sqlite_pragma(dbapi_connection: Any, connection_record: object) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
@@ -47,9 +48,10 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 
 # --- ORM Models ---
 
+
 class Document(Base):
     __tablename__ = "documents"
-    id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))  # noqa: A003
     name = Column(Text, nullable=False)
     created_at = Column(Text, nullable=False)
     versions = relationship("Version", back_populates="document", order_by="Version.version_number")
@@ -57,7 +59,7 @@ class Document(Base):
 
 class Version(Base):
     __tablename__ = "versions"
-    id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))  # noqa: A003
     document_id = Column(Text, ForeignKey("documents.id"), nullable=False)
     version_number = Column(Integer, nullable=False)
     content_hash = Column(Text, nullable=False)
@@ -67,14 +69,12 @@ class Version(Base):
     mapped_block_count = Column(Integer, default=0)
     document = relationship("Document", back_populates="versions")
     nodes = relationship("Node", back_populates="version", order_by="Node.position_index")
-    __table_args__ = (
-        Index("ix_version_doc_hash", "document_id", "content_hash", unique=True),
-    )
+    __table_args__ = (Index("ix_version_doc_hash", "document_id", "content_hash", unique=True),)
 
 
 class Node(Base):
     __tablename__ = "nodes"
-    id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))  # noqa: A003
     version_id = Column(Text, ForeignKey("versions.id"), nullable=False)
     parent_id = Column(Text, ForeignKey("nodes.id"), nullable=True)
     heading = Column(Text, nullable=False, default="")
@@ -87,7 +87,7 @@ class Node(Base):
     confidence_score = Column(Float, default=1.0)
     version = relationship("Version", back_populates="nodes")
     children = relationship("Node", back_populates="parent", foreign_keys=[parent_id])
-    parent = relationship("Node", remote_side=[id], back_populates="children")
+    parent = relationship("Node", remote_side=[id], back_populates="children")  # noqa: A003
     __table_args__ = (
         Index("ix_node_version", "version_id"),
         Index("ix_node_lineage", "lineage_id"),
@@ -97,7 +97,7 @@ class Node(Base):
 
 class Selection(Base):
     __tablename__ = "selections"
-    id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))  # noqa: A003
     version_id = Column(Text, ForeignKey("versions.id"), nullable=False)
     node_ids_json = Column(Text, nullable=False)
     created_at = Column(Text, nullable=False)
@@ -106,7 +106,7 @@ class Selection(Base):
 
 class Generation(Base):
     __tablename__ = "generations"
-    id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))  # noqa: A003
     selection_id = Column(Text, ForeignKey("selections.id"), nullable=False)
     status = Column(Text, nullable=False, default="pending")
     source_hashes_json = Column(Text, nullable=False)
@@ -124,7 +124,7 @@ _engine = None
 _SessionLocal = None
 
 
-def get_engine(database_url: str = "sqlite:///data/ct200.db"):
+def get_engine(database_url: str = "sqlite:///data/ct200.db") -> Engine:
     """Create or return the singleton engine."""
     global _engine
     if _engine is None:
@@ -132,11 +132,13 @@ def get_engine(database_url: str = "sqlite:///data/ct200.db"):
         Base.metadata.create_all(_engine)
         # Create FTS5 virtual table
         with _engine.connect() as conn:
-            conn.execute(text(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5("
-                "node_id UNINDEXED, heading, body, "
-                "tokenize='porter unicode61')"
-            ))
+            conn.execute(
+                text(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5("
+                    "node_id UNINDEXED, heading, body, "
+                    "tokenize='porter unicode61')"
+                )
+            )
             conn.commit()
     return _engine
 
@@ -150,7 +152,7 @@ def get_session(database_url: str = "sqlite:///data/ct200.db") -> Session:
     return _SessionLocal()
 
 
-def reset_engine():
+def reset_engine() -> None:
     """Reset for testing."""
     global _engine, _SessionLocal
     _engine = None
@@ -159,18 +161,21 @@ def reset_engine():
 
 # --- Data Access Helpers ---
 
+
 def compute_content_hash(heading: str, body: str) -> str:
     """SHA-256 of heading+body for deterministic content identification."""
     return hashlib.sha256(f"{heading}\n{body}".encode()).hexdigest()
 
 
-def ingest_document(session: Session, name: str, pdf_bytes: bytes, nodes_data: list[dict]) -> dict:
+def ingest_document(
+    session: Session, name: str, pdf_bytes: bytes, nodes_data: list[dict[str, object]]
+) -> dict[str, object]:
     """Ingest a document version with idempotency check.
-    
+
     Returns dict with document_id, version_id, is_new, version_number.
     """
     content_hash = hashlib.sha256(pdf_bytes).hexdigest()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Find or create document by name
     doc = session.query(Document).filter_by(name=name).first()
@@ -180,23 +185,35 @@ def ingest_document(session: Session, name: str, pdf_bytes: bytes, nodes_data: l
         session.flush()
 
     # Idempotency: check if this exact content already exists
-    existing = session.query(Version).filter_by(
-        document_id=doc.id, content_hash=content_hash
-    ).first()
+    existing = (
+        session.query(Version).filter_by(document_id=doc.id, content_hash=content_hash).first()
+    )
     if existing:
-        return {"document_id": doc.id, "version_id": existing.id,
-                "version_number": existing.version_number, "is_new": False}
+        return {
+            "document_id": doc.id,
+            "version_id": existing.id,
+            "version_number": existing.version_number,
+            "is_new": False,
+        }
 
     # Create new version
-    latest = session.query(Version).filter_by(document_id=doc.id)\
-        .order_by(Version.version_number.desc()).first()
+    latest = (
+        session.query(Version)
+        .filter_by(document_id=doc.id)
+        .order_by(Version.version_number.desc())
+        .first()
+    )
     version_number = (latest.version_number + 1) if latest else 1
     version_id = str(uuid.uuid4())
 
     version = Version(
-        id=version_id, document_id=doc.id, version_number=version_number,
-        content_hash=content_hash, ingested_at=now,
-        block_count=len(nodes_data), mapped_block_count=len(nodes_data),
+        id=version_id,
+        document_id=doc.id,
+        version_number=version_number,
+        content_hash=content_hash,
+        ingested_at=now,
+        block_count=len(nodes_data),
+        mapped_block_count=len(nodes_data),
     )
     session.add(version)
     session.flush()
@@ -205,21 +222,27 @@ def ingest_document(session: Session, name: str, pdf_bytes: bytes, nodes_data: l
     # Use bulk insert for O(1) round-trips instead of N individual adds
     node_objects = []
     for idx, node_data in enumerate(nodes_data):
-        node_objects.append(Node(
-            id=node_data.get("id", str(uuid.uuid4())),
-            version_id=version_id,
-            parent_id=node_data.get("parent_id"),
-            heading=node_data.get("heading", ""),
-            level=node_data.get("level", 0),
-            body=node_data.get("body", ""),
-            content_hash=node_data.get("content_hash", ""),
-            position_index=idx,
-            lineage_id=node_data.get("lineage_id", str(uuid.uuid4())),
-            match_strategy=node_data.get("match_strategy", "new"),
-            confidence_score=node_data.get("confidence_score", 1.0),
-        ))
+        node_objects.append(
+            Node(
+                id=node_data.get("id", str(uuid.uuid4())),
+                version_id=version_id,
+                parent_id=node_data.get("parent_id"),
+                heading=node_data.get("heading", ""),
+                level=node_data.get("level", 0),
+                body=node_data.get("body", ""),
+                content_hash=node_data.get("content_hash", ""),
+                position_index=idx,
+                lineage_id=node_data.get("lineage_id", str(uuid.uuid4())),
+                match_strategy=node_data.get("match_strategy", "new"),
+                confidence_score=node_data.get("confidence_score", 1.0),
+            )
+        )
     session.bulk_save_objects(node_objects)
 
     session.commit()
-    return {"document_id": doc.id, "version_id": version_id,
-            "version_number": version_number, "is_new": True}
+    return {
+        "document_id": doc.id,
+        "version_id": version_id,
+        "version_number": version_number,
+        "is_new": True,
+    }

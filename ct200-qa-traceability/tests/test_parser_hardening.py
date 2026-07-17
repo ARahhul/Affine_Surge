@@ -23,10 +23,10 @@ from ct200.models import (
     ParsedContent,
     ParsedPage,
 )
+from ct200.parser.header_footer_stripper import strip_headers_footers
+from ct200.parser.markdown_renderer import render_markdown
 from ct200.parser.pymupdf_parser import PyMuPDFParser
 from ct200.parser.tree_engine import TreeEngine
-from ct200.parser.markdown_renderer import render_markdown
-from ct200.parser.header_footer_stripper import strip_headers_footers
 
 
 class TestMagicByteRejection:
@@ -69,9 +69,12 @@ class TestMarkdownDeterminism:
             ContentBlock(block_type=BlockType.HEADING, content="Title", page_number=1, level=1),
             ContentBlock(block_type=BlockType.BODY, content="Body text here.", page_number=1),
         ]
-        content = ParsedContent(filename="test.pdf", total_pages=1,
-                                pages=[ParsedPage(page_number=1, blocks=blocks)],
-                                blocks=blocks)
+        content = ParsedContent(
+            filename="test.pdf",
+            total_pages=1,
+            pages=[ParsedPage(page_number=1, blocks=blocks)],
+            blocks=blocks,
+        )
         md1 = render_markdown(content)
         md2 = render_markdown(content)
         md3 = render_markdown(content)
@@ -87,13 +90,18 @@ class TestHeaderFooterStripping:
     def test_repeated_text_stripped(self):
         """Same text at top of 3 consecutive pages gets removed."""
         blocks_per_page = [
-            ContentBlock(block_type=BlockType.BODY, content="CT200 Manual",
-                         page_number=i, bbox=(50, 10, 200, 25))
+            ContentBlock(
+                block_type=BlockType.BODY,
+                content="CT200 Manual",
+                page_number=i,
+                bbox=(50, 10, 200, 25),
+            )
             for i in range(1, 4)
         ]
-        pages = [ParsedPage(page_number=i, blocks=[blocks_per_page[i-1]]) for i in range(1, 4)]
-        content = ParsedContent(filename="t.pdf", total_pages=3,
-                                pages=pages, blocks=blocks_per_page)
+        pages = [ParsedPage(page_number=i, blocks=[blocks_per_page[i - 1]]) for i in range(1, 4)]
+        content = ParsedContent(
+            filename="t.pdf", total_pages=3, pages=pages, blocks=blocks_per_page
+        )
         stripped, count = strip_headers_footers(content, page_height=842.0)
         assert count == 3
         assert len(stripped.blocks) == 0
@@ -101,13 +109,16 @@ class TestHeaderFooterStripping:
     def test_unique_text_preserved(self):
         """Non-repeated text at top of page is NOT stripped."""
         blocks = [
-            ContentBlock(block_type=BlockType.BODY, content=f"Unique page {i}",
-                         page_number=i, bbox=(50, 10, 200, 25))
+            ContentBlock(
+                block_type=BlockType.BODY,
+                content=f"Unique page {i}",
+                page_number=i,
+                bbox=(50, 10, 200, 25),
+            )
             for i in range(1, 4)
         ]
-        pages = [ParsedPage(page_number=i, blocks=[blocks[i-1]]) for i in range(1, 4)]
-        content = ParsedContent(filename="t.pdf", total_pages=3,
-                                pages=pages, blocks=blocks)
+        pages = [ParsedPage(page_number=i, blocks=[blocks[i - 1]]) for i in range(1, 4)]
+        content = ParsedContent(filename="t.pdf", total_pages=3, pages=pages, blocks=blocks)
         stripped, count = strip_headers_footers(content, page_height=842.0)
         assert count == 0
         assert len(stripped.blocks) == 3

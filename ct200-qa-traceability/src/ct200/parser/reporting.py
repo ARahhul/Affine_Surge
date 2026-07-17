@@ -71,7 +71,8 @@ class ReconciliationReport:
             "total_extracted": self.total_extracted,
             "mapped_blocks": self.mapped_blocks,
             "unmapped_blocks": self.unmapped_blocks,
-            "reconciliation_valid": self.total_extracted == self.mapped_blocks + self.unmapped_blocks,
+            "reconciliation_valid": self.total_extracted
+            == self.mapped_blocks + self.unmapped_blocks,
             "unmapped_reasons": self.unmapped_reasons,
         }
 
@@ -156,7 +157,9 @@ def generate_reconciliation_report(
             {
                 "reason": "repeated_header_footer",
                 "count": str(stripped_count),
-                "description": "Removed as repeated running headers/footers across consecutive pages",
+                "description": (
+                    "Removed as repeated running headers/footers" " across consecutive pages"
+                ),
             }
         )
 

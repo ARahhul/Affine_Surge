@@ -19,8 +19,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from ct200.database import (
-    Base, Document, Node, Selection, Version,
-    compute_content_hash, ingest_document,
+    Base,
+    Node,
+    Selection,
+    Version,
+    compute_content_hash,
+    ingest_document,
 )
 from ct200.parser.pymupdf_parser import PyMuPDFParser
 from ct200.parser.tree_engine import TreeEngine
@@ -35,14 +39,19 @@ def _session():
 def _flatten_tree(node, result=None):
     if result is None:
         result = []
-    result.append({
-        "id": node.id, "parent_id": node.parent_id,
-        "heading": node.heading, "level": node.depth,
-        "body": node.body, "content_hash": node.content_hash,
-        "lineage_id": node.lineage_id,
-        "match_strategy": node.match_strategy.value,
-        "confidence_score": node.confidence_score,
-    })
+    result.append(
+        {
+            "id": node.id,
+            "parent_id": node.parent_id,
+            "heading": node.heading,
+            "level": node.depth,
+            "body": node.body,
+            "content_hash": node.content_hash,
+            "lineage_id": node.lineage_id,
+            "match_strategy": node.match_strategy.value,
+            "confidence_score": node.confidence_score,
+        }
+    )
     for child in node.children:
         _flatten_tree(child, result)
     return result
@@ -55,6 +64,7 @@ def sample_pdf():
         pytest.skip("CT200 PDF not found")
     with open(pdf_path, "rb") as f:
         return f.read()
+
 
 class TestEndToEndIngestion:
     """Full pipeline: parse PDF → build tree → persist to DB."""
@@ -91,8 +101,12 @@ class TestEndToEndIngestion:
         tree = TreeEngine().build_tree(content)
         nodes_data = _flatten_tree(tree.root)
         result = ingest_document(session, "ct200.pdf", sample_pdf, nodes_data)
-        nodes = session.query(Node).filter_by(version_id=result["version_id"])\
-            .order_by(Node.position_index).all()
+        nodes = (
+            session.query(Node)
+            .filter_by(version_id=result["version_id"])
+            .order_by(Node.position_index)
+            .all()
+        )
         for i, node in enumerate(nodes):
             assert node.position_index == i
 
@@ -102,19 +116,37 @@ class TestNodeRetrieval:
 
     def test_query_by_version_returns_ordered_nodes(self):
         session = _session()
-        nodes = [{"id": f"n{i}", "heading": f"H{i}", "level": 1, "body": "",
-                  "content_hash": f"h{i}", "lineage_id": f"l{i}"} for i in range(5)]
+        nodes = [
+            {
+                "id": f"n{i}",
+                "heading": f"H{i}",
+                "level": 1,
+                "body": "",
+                "content_hash": f"h{i}",
+                "lineage_id": f"l{i}",
+            }
+            for i in range(5)
+        ]
         ingest_document(session, "doc.pdf", b"content-1", nodes)
         ver = session.query(Version).first()
-        result = session.query(Node).filter_by(version_id=ver.id)\
-            .order_by(Node.position_index).all()
+        result = (
+            session.query(Node).filter_by(version_id=ver.id).order_by(Node.position_index).all()
+        )
         assert len(result) == 5
         assert [n.heading for n in result] == ["H0", "H1", "H2", "H3", "H4"]
 
     def test_lineage_id_query_uses_index(self):
         session = _session()
-        nodes = [{"id": "n1", "heading": "H", "level": 1, "body": "B",
-                  "content_hash": "ch", "lineage_id": "target-lineage"}]
+        nodes = [
+            {
+                "id": "n1",
+                "heading": "H",
+                "level": 1,
+                "body": "B",
+                "content_hash": "ch",
+                "lineage_id": "target-lineage",
+            }
+        ]
         ingest_document(session, "doc.pdf", b"c1", nodes)
         # Query by lineage_id — should hit ix_node_lineage index
         result = session.query(Node).filter_by(lineage_id="target-lineage").first()
@@ -127,11 +159,27 @@ class TestNodeDiffAcrossVersions:
 
     def test_same_lineage_different_hash_detected(self):
         session = _session()
-        nodes_v1 = [{"id": "n1", "heading": "Threshold: 5V", "level": 1,
-                     "body": "Max 5V", "content_hash": "hash-v1", "lineage_id": "lin-1"}]
+        nodes_v1 = [
+            {
+                "id": "n1",
+                "heading": "Threshold: 5V",
+                "level": 1,
+                "body": "Max 5V",
+                "content_hash": "hash-v1",
+                "lineage_id": "lin-1",
+            }
+        ]
         ingest_document(session, "doc.pdf", b"v1-content", nodes_v1)
-        nodes_v2 = [{"id": "n2", "heading": "Threshold: 3.3V", "level": 1,
-                     "body": "Max 3.3V", "content_hash": "hash-v2", "lineage_id": "lin-1"}]
+        nodes_v2 = [
+            {
+                "id": "n2",
+                "heading": "Threshold: 3.3V",
+                "level": 1,
+                "body": "Max 3.3V",
+                "content_hash": "hash-v2",
+                "lineage_id": "lin-1",
+            }
+        ]
         ingest_document(session, "doc.pdf", b"v2-content", nodes_v2)
         # Query both versions of the same lineage
         history = session.query(Node).filter_by(lineage_id="lin-1").all()
@@ -145,12 +193,25 @@ class TestSelectionCreation:
 
     def test_selection_stores_node_ids(self):
         import json
+
         session = _session()
-        nodes = [{"id": "n1", "heading": "H", "level": 1, "body": "",
-                  "content_hash": "c", "lineage_id": "l"}]
+        nodes = [
+            {
+                "id": "n1",
+                "heading": "H",
+                "level": 1,
+                "body": "",
+                "content_hash": "c",
+                "lineage_id": "l",
+            }
+        ]
         result = ingest_document(session, "d.pdf", b"x", nodes)
-        sel = Selection(id=str(uuid.uuid4()), version_id=result["version_id"],
-                        node_ids_json=json.dumps(["n1"]), created_at="2024-01-01T00:00:00Z")
+        sel = Selection(
+            id=str(uuid.uuid4()),
+            version_id=result["version_id"],
+            node_ids_json=json.dumps(["n1"]),
+            created_at="2024-01-01T00:00:00Z",
+        )
         session.add(sel)
         session.commit()
         loaded = session.query(Selection).first()
@@ -159,9 +220,11 @@ class TestSelectionCreation:
 
     def test_selection_with_invalid_version_fails_fk(self):
         import json
+
         session = _session()
-        sel = Selection(id="s1", version_id="nonexistent",
-                        node_ids_json=json.dumps(["n1"]), created_at="now")
+        sel = Selection(
+            id="s1", version_id="nonexistent", node_ids_json=json.dumps(["n1"]), created_at="now"
+        )
         session.add(sel)
         try:
             session.commit()
@@ -177,9 +240,17 @@ class TestContentHashIntegrity:
         session = _session()
         heading, body = "Safety Protocol", "Do not exceed 5V."
         expected_hash = compute_content_hash(heading, body)
-        nodes = [{"id": "n1", "heading": heading, "level": 1, "body": body,
-                  "content_hash": expected_hash, "lineage_id": "l1"}]
-        result = ingest_document(session, "d.pdf", b"pdf-bytes", nodes)
+        nodes = [
+            {
+                "id": "n1",
+                "heading": heading,
+                "level": 1,
+                "body": body,
+                "content_hash": expected_hash,
+                "lineage_id": "l1",
+            }
+        ]
+        ingest_document(session, "d.pdf", b"pdf-bytes", nodes)
         loaded_node = session.query(Node).filter_by(id="n1").first()
         assert loaded_node.content_hash == expected_hash
         # Recompute and verify
@@ -192,9 +263,16 @@ class TestMultiVersionDocument:
     def test_three_versions_tracked(self):
         session = _session()
         for i in range(3):
-            nodes = [{"id": str(uuid.uuid4()), "heading": f"V{i+1}", "level": 1,
-                      "body": f"Version {i+1} content", "content_hash": f"h{i}",
-                      "lineage_id": f"l{i}"}]
+            nodes = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "heading": f"V{i+1}",
+                    "level": 1,
+                    "body": f"Version {i+1} content",
+                    "content_hash": f"h{i}",
+                    "lineage_id": f"l{i}",
+                }
+            ]
             ingest_document(session, "multi.pdf", f"content-{i}".encode(), nodes)
         versions = session.query(Version).order_by(Version.version_number).all()
         assert len(versions) == 3
@@ -203,9 +281,16 @@ class TestMultiVersionDocument:
     def test_each_version_has_independent_nodes(self):
         session = _session()
         for i in range(2):
-            nodes = [{"id": str(uuid.uuid4()), "heading": f"Section {i}",
-                      "level": 1, "body": "", "content_hash": f"c{i}",
-                      "lineage_id": f"l{i}"}]
+            nodes = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "heading": f"Section {i}",
+                    "level": 1,
+                    "body": "",
+                    "content_hash": f"c{i}",
+                    "lineage_id": f"l{i}",
+                }
+            ]
             ingest_document(session, "doc.pdf", f"ver{i}".encode(), nodes)
         v1_nodes = session.query(Node).join(Version).filter(Version.version_number == 1).all()
         v2_nodes = session.query(Node).join(Version).filter(Version.version_number == 2).all()

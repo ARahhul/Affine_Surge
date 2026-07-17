@@ -15,13 +15,14 @@ os.environ.setdefault("AUTH_SECRET_KEY", "test")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from ct200.models import BlockType, ContentBlock, ParsedContent, ParsedPage
 from ct200.parser.tree_engine import TreeEngine
-from ct200.models import ContentBlock, BlockType, ParsedContent, ParsedPage
 
 
 def _make_content(blocks: list[ContentBlock]) -> ParsedContent:
     return ParsedContent(
-        filename="test.pdf", total_pages=1,
+        filename="test.pdf",
+        total_pages=1,
         pages=[ParsedPage(page_number=1, blocks=blocks)],
         blocks=blocks,
     )
@@ -32,9 +33,13 @@ class TestDuplicateHeadings:
 
     def test_same_heading_text_yields_distinct_nodes(self):
         blocks = [
-            ContentBlock(block_type=BlockType.HEADING, content="Introduction", page_number=1, level=1),
+            ContentBlock(
+                block_type=BlockType.HEADING, content="Introduction", page_number=1, level=1
+            ),
             ContentBlock(block_type=BlockType.BODY, content="First section body", page_number=1),
-            ContentBlock(block_type=BlockType.HEADING, content="Introduction", page_number=1, level=1),
+            ContentBlock(
+                block_type=BlockType.HEADING, content="Introduction", page_number=1, level=1
+            ),
             ContentBlock(block_type=BlockType.BODY, content="Second section body", page_number=1),
         ]
         tree = TreeEngine().build_tree(_make_content(blocks))
@@ -95,8 +100,12 @@ class TestListItemClassification:
 
     def test_numbered_list_stays_in_body(self):
         blocks = [
-            ContentBlock(block_type=BlockType.HEADING, content="Procedures", page_number=1, level=1),
-            ContentBlock(block_type=BlockType.LIST_ITEM, content="1. Turn off power", page_number=1),
+            ContentBlock(
+                block_type=BlockType.HEADING, content="Procedures", page_number=1, level=1
+            ),
+            ContentBlock(
+                block_type=BlockType.LIST_ITEM, content="1. Turn off power", page_number=1
+            ),
             ContentBlock(block_type=BlockType.LIST_ITEM, content="2. Remove cover", page_number=1),
         ]
         tree = TreeEngine().build_tree(_make_content(blocks))

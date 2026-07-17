@@ -16,6 +16,11 @@ os.environ.setdefault("AUTH_SECRET_KEY", "test")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from datetime import UTC
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from ct200.database import (
     Base,
     Document,
@@ -25,8 +30,6 @@ from ct200.database import (
     Version,
     compute_content_hash,
 )
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 
 def _setup_db():
@@ -38,38 +41,47 @@ def _setup_db():
 
 def _seed_generation(session, doc_name="ct200.pdf"):
     """Seed a document with v1 nodes, a selection, and a generation record."""
-    import json, uuid
-    from datetime import datetime, timezone
+    import json
+    from datetime import datetime
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     doc = Document(id="doc-1", name=doc_name, created_at=now)
     session.add(doc)
     session.flush()
 
     # Version 1 with a node
-    v1 = Version(id="v1", document_id="doc-1", version_number=1,
-                 content_hash="hash-v1", ingested_at=now)
+    v1 = Version(
+        id="v1", document_id="doc-1", version_number=1, content_hash="hash-v1", ingested_at=now
+    )
     session.add(v1)
     session.flush()
 
     node = Node(
-        id="n1", version_id="v1", heading="Threshold: 5.0V",
-        level=1, body="Operating voltage must not exceed 5.0V.",
-        content_hash=compute_content_hash("Threshold: 5.0V", "Operating voltage must not exceed 5.0V."),
-        position_index=0, lineage_id="lin-n1",
+        id="n1",
+        version_id="v1",
+        heading="Threshold: 5.0V",
+        level=1,
+        body="Operating voltage must not exceed 5.0V.",
+        content_hash=compute_content_hash(
+            "Threshold: 5.0V", "Operating voltage must not exceed 5.0V."
+        ),
+        position_index=0,
+        lineage_id="lin-n1",
     )
     session.add(node)
     session.flush()
 
-    sel = Selection(id="sel-1", version_id="v1",
-                    node_ids_json=json.dumps(["n1"]), created_at=now)
+    sel = Selection(id="sel-1", version_id="v1", node_ids_json=json.dumps(["n1"]), created_at=now)
     session.add(sel)
     session.flush()
 
     gen = Generation(
-        id="gen-1", selection_id="sel-1", status="completed",
+        id="gen-1",
+        selection_id="sel-1",
+        status="completed",
         source_hashes_json=json.dumps({"n1": node.content_hash}),
-        model_id="test", created_at=now,
+        model_id="test",
+        created_at=now,
     )
     session.add(gen)
     session.commit()
@@ -82,15 +94,25 @@ class TestUnchangedContentIsCurrent:
         original_hash = _seed_generation(session)
 
         # Add v2 with IDENTICAL content (same hash)
-        from datetime import datetime, timezone
-        v2 = Version(id="v2", document_id="doc-1", version_number=2,
-                     content_hash="hash-v2", ingested_at=datetime.now(timezone.utc).isoformat())
+        from datetime import datetime
+
+        v2 = Version(
+            id="v2",
+            document_id="doc-1",
+            version_number=2,
+            content_hash="hash-v2",
+            ingested_at=datetime.now(UTC).isoformat(),
+        )
         session.add(v2)
         node_v2 = Node(
-            id="n1-v2", version_id="v2", heading="Threshold: 5.0V",
-            level=1, body="Operating voltage must not exceed 5.0V.",
+            id="n1-v2",
+            version_id="v2",
+            heading="Threshold: 5.0V",
+            level=1,
+            body="Operating voltage must not exceed 5.0V.",
             content_hash=original_hash,
-            position_index=0, lineage_id="lin-n1",
+            position_index=0,
+            lineage_id="lin-n1",
         )
         session.add(node_v2)
         session.commit()
@@ -98,35 +120,47 @@ class TestUnchangedContentIsCurrent:
         # Check staleness: source_hash matches latest → NOT stale
         gen = session.get(Generation, "gen-1")
         import json
+
         source_hashes = json.loads(gen.source_hashes_json)
-        latest_node = session.query(Node).filter_by(
-            lineage_id="lin-n1", version_id="v2"
-        ).first()
+        latest_node = session.query(Node).filter_by(lineage_id="lin-n1", version_id="v2").first()
         assert source_hashes["n1"] == latest_node.content_hash
 
 
 class TestNumericThresholdChangeIsStale:
     def test_changed_voltage_threshold_detected(self):
         session = _setup_db()
-        original_hash = _seed_generation(session)
+        _seed_generation(session)
 
         # v2: numeric threshold changed from 5.0V to 3.3V
-        from datetime import datetime, timezone
-        v2 = Version(id="v2", document_id="doc-1", version_number=2,
-                     content_hash="hash-v2-changed", ingested_at=datetime.now(timezone.utc).isoformat())
+        from datetime import datetime
+
+        v2 = Version(
+            id="v2",
+            document_id="doc-1",
+            version_number=2,
+            content_hash="hash-v2-changed",
+            ingested_at=datetime.now(UTC).isoformat(),
+        )
         session.add(v2)
-        new_hash = compute_content_hash("Threshold: 3.3V", "Operating voltage must not exceed 3.3V.")
+        new_hash = compute_content_hash(
+            "Threshold: 3.3V", "Operating voltage must not exceed 3.3V."
+        )
         node_v2 = Node(
-            id="n1-v2", version_id="v2", heading="Threshold: 3.3V",
-            level=1, body="Operating voltage must not exceed 3.3V.",
+            id="n1-v2",
+            version_id="v2",
+            heading="Threshold: 3.3V",
+            level=1,
+            body="Operating voltage must not exceed 3.3V.",
             content_hash=new_hash,
-            position_index=0, lineage_id="lin-n1",
+            position_index=0,
+            lineage_id="lin-n1",
         )
         session.add(node_v2)
         session.commit()
 
         # source_hash != latest_hash → STALE
         import json
+
         gen = session.get(Generation, "gen-1")
         source_hashes = json.loads(gen.source_hashes_json)
         assert source_hashes["n1"] != new_hash  # Different = stale
@@ -135,24 +169,37 @@ class TestNumericThresholdChangeIsStale:
 class TestPunctuationChangeIsStale:
     def test_minor_punctuation_shift_still_detected(self):
         session = _setup_db()
-        original_hash = _seed_generation(session)
+        _seed_generation(session)
 
         # v2: only punctuation changed (period → semicolon)
-        from datetime import datetime, timezone
-        v2 = Version(id="v2", document_id="doc-1", version_number=2,
-                     content_hash="hash-v2-punct", ingested_at=datetime.now(timezone.utc).isoformat())
+        from datetime import datetime
+
+        v2 = Version(
+            id="v2",
+            document_id="doc-1",
+            version_number=2,
+            content_hash="hash-v2-punct",
+            ingested_at=datetime.now(UTC).isoformat(),
+        )
         session.add(v2)
-        new_hash = compute_content_hash("Threshold: 5.0V", "Operating voltage must not exceed 5.0V;")
+        new_hash = compute_content_hash(
+            "Threshold: 5.0V", "Operating voltage must not exceed 5.0V;"
+        )
         node_v2 = Node(
-            id="n1-v2", version_id="v2", heading="Threshold: 5.0V",
-            level=1, body="Operating voltage must not exceed 5.0V;",
+            id="n1-v2",
+            version_id="v2",
+            heading="Threshold: 5.0V",
+            level=1,
+            body="Operating voltage must not exceed 5.0V;",
             content_hash=new_hash,
-            position_index=0, lineage_id="lin-n1",
+            position_index=0,
+            lineage_id="lin-n1",
         )
         session.add(node_v2)
         session.commit()
 
         import json
+
         gen = session.get(Generation, "gen-1")
         source_hashes = json.loads(gen.source_hashes_json)
         # Even a single character change produces a different SHA-256
@@ -165,16 +212,20 @@ class TestMissingNodeIsStale:
         _seed_generation(session)
 
         # v2: node with lin-n1 does NOT exist
-        from datetime import datetime, timezone
-        v2 = Version(id="v2", document_id="doc-1", version_number=2,
-                     content_hash="hash-v2-empty", ingested_at=datetime.now(timezone.utc).isoformat())
+        from datetime import datetime
+
+        v2 = Version(
+            id="v2",
+            document_id="doc-1",
+            version_number=2,
+            content_hash="hash-v2-empty",
+            ingested_at=datetime.now(UTC).isoformat(),
+        )
         session.add(v2)
         session.commit()
 
         # No node with lineage_id=lin-n1 in v2 → node is missing → stale
-        latest_match = session.query(Node).filter_by(
-            lineage_id="lin-n1", version_id="v2"
-        ).first()
+        latest_match = session.query(Node).filter_by(lineage_id="lin-n1", version_id="v2").first()
         assert latest_match is None  # Confirms node removed
 
 
@@ -184,6 +235,7 @@ class TestStalenessCheckIsReadOnly:
         _seed_generation(session)
 
         import json
+
         gen = session.get(Generation, "gen-1")
         original_status = gen.status
         original_hashes = gen.source_hashes_json

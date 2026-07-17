@@ -93,9 +93,7 @@ def _needs_blank_line(prev_type: BlockType, curr_type: BlockType) -> bool:
     # Blank line transitioning to/from list
     if prev_type == BlockType.LIST_ITEM and curr_type != BlockType.LIST_ITEM:
         return True
-    if prev_type != BlockType.LIST_ITEM and curr_type == BlockType.LIST_ITEM:
-        return True
-    return False
+    return prev_type != BlockType.LIST_ITEM and curr_type == BlockType.LIST_ITEM
 
 
 # Pre-compiled patterns for detecting already-formatted list items
@@ -109,7 +107,4 @@ _FORMATTED_LIST_PATTERNS: list[re.Pattern[str]] = [
 
 def _is_already_formatted_list(text: str) -> bool:
     """Check if the text already has list formatting (numbered or bulleted)."""
-    for pattern in _FORMATTED_LIST_PATTERNS:
-        if pattern.match(text):
-            return True
-    return False
+    return any(pattern.match(text) for pattern in _FORMATTED_LIST_PATTERNS)

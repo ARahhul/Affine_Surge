@@ -97,16 +97,10 @@ class LineageMatcher:
             "lineage_matching_complete",
             total_nodes=len(new_nodes),
             exact_matches=sum(1 for m in matches if m.strategy == MatchStrategy.EXACT),
-            heading_matches=sum(
-                1 for m in matches if m.strategy == MatchStrategy.HEADING
-            ),
-            positional_matches=sum(
-                1 for m in matches if m.strategy == MatchStrategy.POSITIONAL
-            ),
+            heading_matches=sum(1 for m in matches if m.strategy == MatchStrategy.HEADING),
+            positional_matches=sum(1 for m in matches if m.strategy == MatchStrategy.POSITIONAL),
             new_nodes=sum(1 for m in matches if m.strategy == MatchStrategy.NEW),
-            needs_review=sum(
-                1 for m in matches if m.status == LineageStatus.NEEDS_REVIEW
-            ),
+            needs_review=sum(1 for m in matches if m.status == LineageStatus.NEEDS_REVIEW),
         )
 
         return matches
@@ -142,9 +136,7 @@ class LineageMatcher:
         heading_key = new_node.heading.strip().lower()
         if heading_key and heading_key in prev_by_heading:
             candidates = [
-                n
-                for n in prev_by_heading[heading_key]
-                if n.lineage_id not in matched_prev_ids
+                n for n in prev_by_heading[heading_key] if n.lineage_id not in matched_prev_ids
             ]
             if candidates:
                 # Score by depth similarity and parent position
@@ -212,9 +204,7 @@ class LineageMatcher:
 
         return min(candidates, key=distance)
 
-    def _compute_heading_confidence(
-        self, new_node: DocumentNode, prev_node: DocumentNode
-    ) -> float:
+    def _compute_heading_confidence(self, new_node: DocumentNode, prev_node: DocumentNode) -> float:
         """Compute confidence for heading-based match (range 0.7-0.95)."""
         confidence = 0.8  # Base confidence for heading match
 

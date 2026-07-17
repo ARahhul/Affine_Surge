@@ -6,14 +6,14 @@ Single source of truth for all domain types. No unnecessary abstractions.
 from __future__ import annotations
 
 import hashlib
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-
 # --- Block Types (Parser) ---
 
-class BlockType(str, Enum):
+
+class BlockType(StrEnum):
     HEADING = "heading"
     BODY = "body"
     TABLE = "table"
@@ -43,14 +43,15 @@ class ParsedContent(BaseModel):
 
 # --- Tree / Versioning ---
 
-class MatchStrategy(str, Enum):
+
+class MatchStrategy(StrEnum):
     EXACT = "exact"
     HEADING = "heading"
     POSITIONAL = "positional"
     NEW = "new"
 
 
-class LineageStatus(str, Enum):
+class LineageStatus(StrEnum):
     MATCHED = "matched"
     NEEDS_REVIEW = "needs_review"
     NEW = "new"
@@ -90,6 +91,7 @@ class LineageMatch(BaseModel):
 
 # --- Value Object Utilities ---
 
+
 def compute_content_hash(heading: str, body: str) -> str:
     """SHA-256 of heading+body. Identical content → same hash (deterministic)."""
     return hashlib.sha256(f"{heading}\n{body}".encode()).hexdigest()
@@ -97,35 +99,44 @@ def compute_content_hash(heading: str, body: str) -> str:
 
 # --- Exceptions ---
 
+
 class CT200Error(Exception):
     """Base domain error."""
+
     code: str = "INTERNAL_ERROR"
     status_code: int = 500
-    def __init__(self, message: str = "", **kwargs):
+
+    def __init__(self, message: str = "", **kwargs: object) -> None:
         super().__init__(message)
         self.message = message
         self.details = kwargs
+
 
 class FileTooLargeError(CT200Error):
     code = "FILE_TOO_LARGE"
     status_code = 413
 
+
 class InvalidFileFormatError(CT200Error):
     code = "INVALID_FILE_FORMAT"
     status_code = 422
+
 
 class PathologicalInputError(CT200Error):
     code = "PATHOLOGICAL_INPUT"
     status_code = 422
 
+
 class ParsingError(CT200Error):
     code = "PARSING_ERROR"
     status_code = 422
+
 
 class TreeValidationError(CT200Error):
     code = "TREE_VALIDATION_FAILED"
     status_code = 422
 
-class TimeoutError(CT200Error):
+
+class CT200TimeoutError(CT200Error):
     code = "TIMEOUT"
     status_code = 504
