@@ -4,7 +4,7 @@ A deterministic backend for reconstructing technical PDF manuals as versioned se
 
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688?logo=fastapi&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-46%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-73%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-not%20specified-lightgrey)
 
 ## Overview
@@ -13,7 +13,7 @@ CT200 QA Traceability accepts PDF manuals, extracts layout-aware content with Py
 
 The repository is intentionally small and reviewer-friendly: the HTTP application, domain models, persistence helpers, parser, and versioning engine are separated without repository wrappers or a layered middleware stack.
 
-> **Current scope:** the public API supports ingestion, browsing, node history, and selection creation. NVIDIA NIM generation components and staleness-analysis code remain in the source tree, but generation, impact, and search HTTP routes are not currently exposed. Authentication and request rate limiting are also not enabled.
+> **Current scope:** the public API supports ingestion, browsing, node history, selection creation, QA test case generation via NVIDIA NIM, staleness detection, and full-text search. Lineage matching is wired into ingestion for automatic cross-version node tracking. Authentication and request rate limiting are not enabled.
 
 ## Architecture
 
@@ -52,11 +52,12 @@ flowchart TD
 | Parser diagnostics | Internal | Recovery decisions are accumulated as parser warning strings; they are not yet returned by the API |
 | Versioned persistence | Available | Duplicate PDF bytes are idempotent within a document; new content creates an append-only version |
 | Deterministic node ordering | Available | Every stored node receives a unique `position_index` within its version |
-| Node lineage matching | Library component | Exact, heading, and positional strategies are tested but are not currently orchestrated by ingestion |
+| Node lineage matching | Available | Wired into ingestion — exact, heading, and positional strategies applied automatically on re-ingest |
 | Node history endpoint | Available | Returns records sharing the selected node's `lineage_id` |
 | Immutable selections | Available | Node IDs are batch-validated against a pinned version before creation |
-| FTS5 storage | Foundation only | The virtual table is initialized, but indexing and a search route are not currently wired |
-| NVIDIA NIM generation | Foundation only | Client, schema validation, retries, and prompt templates exist without an HTTP route |
+| FTS5 search | Available | Full-text search over document nodes via `/documents/{id}/search?q=` |
+| NVIDIA NIM generation | Available | Client, prompt, retries, and HTTP route with error handling (requires API key) |
+| Staleness detection | Available | Compares generation source hashes against latest version nodes by lineage |
 
 ## System Design
 
@@ -143,8 +144,14 @@ Start the service and open [Swagger UI](http://127.0.0.1:8000/docs) for the gene
 | `GET` | `/health` | Liveness check |
 | `POST` | `/api/v1/documents` | Ingest a PDF from multipart field `file` |
 | `GET` | `/api/v1/documents/{doc_id}/nodes` | Browse the latest or requested document version in source order |
+| `GET` | `/api/v1/documents/{doc_id}/search?q=` | Full-text search over document nodes (FTS5) |
 | `GET` | `/api/v1/nodes/{node_id}/diff` | Return history for the node's lineage |
+| `GET` | `/api/v1/nodes/{node_id}/generations` | Return all generations containing this node |
 | `POST` | `/api/v1/selections` | Create an immutable selection pinned to one version |
+| `GET` | `/api/v1/selections/{sel_id}/generations` | List generations for a selection |
+| `POST` | `/api/v1/generations` | Generate QA test cases from a selection (not idempotent) |
+| `GET` | `/api/v1/generations/{gen_id}` | Retrieve a stored generation record |
+| `GET` | `/api/v1/generations/{gen_id}/staleness` | Check if generation sources have changed |
 
 The browse endpoint accepts an optional integer `version` query parameter. It omits the synthetic root node and returns a 200-character body preview for each stored section.
 
@@ -199,6 +206,45 @@ Use node IDs returned by the browse endpoint and the `version_id` returned durin
 curl.exe -X POST http://127.0.0.1:8000/api/v1/selections ^
   -H "Content-Type: application/json" ^
   -d "{\"version_id\":\"<version_id>\",\"node_ids\":[\"<node_id>\"],\"label\":\"Safety review\"}"
+```
+
+## End-to-End Demo Flow
+
+The full assignment-required flow: ingest → select → generate → re-ingest → check staleness.
+
+> **Note:** Step 3 (generation) requires a working NVIDIA NIM API key set in `NVIDIA_NIM_API_KEY`. Without it the generation route returns 502.
+
+```bat
+REM 1. Ingest v1
+curl.exe -X POST http://127.0.0.1:8000/api/v1/documents ^
+  -F "file=@pdf\ct200_manual.pdf;type=application/pdf"
+REM → 201 {"document_id":"<DOC>","version_id":"<V1>","version_number":1,"is_new":true}
+
+REM 2. Create a selection (use node IDs from the browse response)
+curl.exe "http://127.0.0.1:8000/api/v1/documents/<DOC>/nodes" > nodes.json
+REM Pick node IDs from nodes.json, then:
+curl.exe -X POST http://127.0.0.1:8000/api/v1/selections ^
+  -H "Content-Type: application/json" ^
+  -d "{\"version_id\":\"<V1>\",\"node_ids\":[\"<NODE_1>\",\"<NODE_2>\"],\"label\":\"Demo\"}"
+REM → 201 {"id":"<SEL>", ...}
+
+REM 3. Generate test cases (requires NVIDIA_NIM_API_KEY)
+curl.exe -X POST http://127.0.0.1:8000/api/v1/generations ^
+  -H "Content-Type: application/json" ^
+  -d "{\"selection_id\":\"<SEL>\"}"
+REM → 201 {"id":"<GEN>","status":"completed"}
+
+REM 4. Ingest v2 (same filename, different content = new version)
+curl.exe -X POST http://127.0.0.1:8000/api/v1/documents ^
+  -F "file=@pdf\ct200_manual_v2.pdf;type=application/pdf"
+REM → 201 {"document_id":"<DOC>","version_id":"<V2>","version_number":2,"is_new":true}
+
+REM 5. Check staleness
+curl.exe "http://127.0.0.1:8000/api/v1/generations/<GEN>/staleness"
+REM → 200 {"generation_id":"<GEN>","is_stale":true,"nodes":[{"lineage_id":"...","status":"changed",...}]}
+
+REM 6. Confirm it reports "changed" — nodes whose content_hash differs between v1 and v2
+REM    will show status: "changed"; removed sections show status: "removed"
 ```
 
 ## Installation
@@ -282,7 +328,7 @@ Run the complete test suite once (non-watch mode):
 pytest tests/ -q
 ```
 
-The current suite contains 46 tests covering API ingestion, database behavior, idempotency, parser hardening and irregular structures, lineage matching, hash sensitivity, and staleness logic.
+The current suite contains 73 tests covering API ingestion, database behavior, idempotency, parser hardening and irregular structures, lineage matching, hash sensitivity, staleness logic, generation error handling, search, and route-level integration.
 
 Run static checks independently:
 
@@ -319,8 +365,7 @@ See [`docs/QA_PERFORMANCE_REPORT.md`](docs/QA_PERFORMANCE_REPORT.md) for the tes
 ## Known Limitations
 
 - The service has no authentication, authorization, request rate limiting, or TLS termination; do not expose it directly to an untrusted network.
-- Generation, impact/staleness, and full-text search are not available through the current HTTP API.
-- The lineage matcher is not yet called by the ingestion route, so cross-version lineage history is not automatically established.
+- Generation requires a valid NVIDIA NIM API key; without one, POST /api/v1/generations returns 502.
 - Parser warnings and reconciliation reports are not persisted or returned by ingestion.
 - Document identity depends on the uploaded filename, not an explicit stable document key.
 - Table extraction depends on detectable PDF geometry; merged cells and borderless tables may degrade to partial Markdown.
